@@ -1,0 +1,20 @@
+name: "Minecraft Server for HA"
+description: "Minecraft Bedrock Server tailored for Home Assistant with worlds accessible via SFTP"
+version: "1.0.25"
+slug: "minecraft_server_for_ha"
+url: https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
+apparmor: true
+init: false
+startup: application
+ingress: true
+ingress_port: 8789
+panel_icon: mdi:minecraft
+panel_title: "Minecraft Server"
+host_network: true
+arch:
+  - amd64
+map:
+  - share:rw
+  - addon_config:rw
+options: {}
+schema: {}
