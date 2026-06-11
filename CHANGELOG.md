@@ -1,3 +1,7 @@
+## 1.0.26 - 2026-06-11
+- Fix: create /config/worlds in start.sh before privilege demotion to avoid "Permission denied"
+- Fix: bedrock-entry.sh now falls back to /data/worlds if /config/worlds is unavailable
+
 ## 1.0.25 - 2026-06-11
 - Moved `worlds` directory from `/data/worlds/` to `/addon_configs/mc_server_ha/worlds/` for SFTP accessibility
 - Added automatic migration of existing worlds on first start
