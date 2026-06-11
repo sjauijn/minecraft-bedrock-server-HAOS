@@ -1,6 +1,6 @@
 name: "Minecraft Server for HA"
 description: "Minecraft Bedrock Server tailored for Home Assistant with worlds accessible via SFTP"
-version: "1.0.26"
+version: "1.0.27"
 slug: "minecraft_server_for_ha"
 url: https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
 apparmor: true
@@ -16,7 +16,5 @@ arch:
 map:
   - share:rw
   - addon_config:rw
-options:
-  log_level: debug
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
