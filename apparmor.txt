@@ -81,6 +81,10 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /share/                      rix,
   /share/**                    rixwlk,
 
+  # addon_config mount (mapped as addon_config:rw in config.yaml)
+  /config/                     rixwlk,
+  /config/**                   rixwlk,
+
   # BDS metadata / definities
   /etc/bds-version             r,
   /etc/bds-property-definitions.json r,
