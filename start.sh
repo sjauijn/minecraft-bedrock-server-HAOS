@@ -27,20 +27,6 @@ cleanup_stale_pid() {
   fi
 }
 
-# --- Ensure /config/worlds exists before dropping privileges ---
-# /config is the symlink HA creates to /addon_configs/<slug>/
-# We create /config/worlds here while still running as root (before entrypoint-demoter demotes)
-if [ -d "/config" ]; then
-  if [ ! -d "/config/worlds" ]; then
-    echo "📁 Initializing /config/worlds..."
-    mkdir -p /config/worlds
-    chmod 0777 /config/worlds
-    echo "✅ /config/worlds created"
-  fi
-else
-  echo "⚠️ /config not available yet, worlds dir will be created on first run"
-fi
-
 cd /opt/flask
 echo "🚀 Starting Flask webserver on port ${FLASK_PORT}..."
 waitress-serve --listen=0.0.0.0:${FLASK_PORT} app:app &
