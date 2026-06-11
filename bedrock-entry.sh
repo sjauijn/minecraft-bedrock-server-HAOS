@@ -40,17 +40,14 @@ echo "✨ Symlink check and update complete..."
 # Migration: move worlds from old /data/worlds to new /config/worlds on first start
 if [ -d "${DATA_DIR}/worlds" ] && [ ! -L "${DATA_DIR}/worlds" ] && [ ! -d "${WORLDS_DIR}" ]; then
   echo "🔄 Migrating worlds from ${DATA_DIR}/worlds to ${WORLDS_DIR}..."
-  mv "${DATA_DIR}/worlds" "${WORLDS_DIR}" || echo "⚠️ Migration failed, continuing"
+  mv "${DATA_DIR}/worlds" "${WORLDS_DIR}"
   echo "✅ Migration complete. Worlds are now accessible via SFTP at addon_configs/mc_server_ha/worlds/"
 fi
 
-# /config/worlds is created by start.sh before privilege demotion.
-# If for some reason it is missing, log a clear error instead of failing silently.
 if [ ! -d "${WORLDS_DIR}" ]; then
-  echo "⚠️ ${WORLDS_DIR} does not exist. Check that addon_config:rw is mapped and /config is writable."
-  echo "   Falling back to /data/worlds..."
-  WORLDS_DIR="${DATA_DIR}/worlds"
+  echo "📁 Creating ${WORLDS_DIR}..."
   mkdir -p "${WORLDS_DIR}"
+  chmod 0777 "${WORLDS_DIR}"
 fi
 
 
