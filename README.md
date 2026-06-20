@@ -23,27 +23,13 @@ Full credit and appreciation go to the original authors and maintainers:
 
 ---
 
-## What's different from the original docker image
-
-This fork removes all automatic Bedrock software downloading. Instead, you upload the server ZIP yourself — giving you full control over which version is running. It also moves the `worlds` directory to `addon_configs/<slug>/worlds/`, making saves accessible via SFTP.
-
-| | Original | This fork |
-|---|---|---|
-| `worlds` location | `/data/worlds/` | `addon_configs/<slug>/worlds/` |
-| Accessible via SFTP | No | Yes |
-| BDS software management | Auto-download on start | Manual ZIP upload |
-| Version control | Auto-latest | You choose |
-| Upgrade support | Automatic | Upload newer ZIP |
-| Downgrade support | No | Yes (with 30-second safety countdown) |
-
----
-
 ## ✨ Features
 
 | Feature | Description |
 |:--------|:--------------|
 | Bedrock Dedicated Server | Runs the official Mojang Bedrock Server inside Home Assistant |
 | Manual software management | You control which version is installed — no automatic downloads |
+| Worlds accessible via SFTP | World saves stored in `addon_configs/<slug>/worlds/`, reachable without Portainer or Docker console |
 | Upgrade support | Upload a newer ZIP to upgrade the server software |
 | Downgrade support | Optionally install an older version with a 30-second safety countdown |
 | World configuration | Seeds, world type, difficulty, gamemode & cheats |
