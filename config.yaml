@@ -1,8 +1,8 @@
-name: "Minecraft Server for HA"
+name: "Minecraft Bedrock Server"
 description: "Minecraft Bedrock Server tailored for Home Assistant with worlds accessible via SFTP"
 version: "1.0.28"
-slug: "minecraft_server_for_ha"
-url: https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
+slug: "minecraft_bedrock"
+url: https://github.com/sjauijn/minecraft-bedrock-server-HAOS/blob/main/README.md
 apparmor: true
 init: false
 startup: application
