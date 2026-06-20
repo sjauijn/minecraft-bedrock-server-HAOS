@@ -13,16 +13,22 @@ WORLDS_DIR="${CONFIG_DIR}/worlds"
 #  Bedrock Server entry door Kevin Hekert
 #  - Applies server.properties via set-property (thanks to itzg!)
 #  - Builds permissions/allowlist (from options + env fallbacks)
-#  - Starts runtime-installed binary at /opt/bds/bedrock_server-${VERSION}
+#  - Starts runtime-installed binary at /data/bds/bedrock_server-${VERSION}
 # =========================
 
-#(Re)set symlinks (blijft niet altijd bewaard vanuit Dockerfile build)
+#(Re)set symlinks — /data/bds must exist before we create symlinks inside it
+
+# --- Ensure /data/bds exists (persistent binary directory) ---
+if [ ! -d "${DATA_DIR}/bds" ]; then
+  mkdir -p "${DATA_DIR}/bds"
+  chmod 0755 "${DATA_DIR}/bds"
+fi
 
 LINKS=(
-  "/opt/bds/worlds:${WORLDS_DIR}"
-  "/opt/bds/server.properties:${DATA_DIR}/server.properties"
-  "/opt/bds/allowlist.json:${DATA_DIR}/allowlist.json"
-  "/opt/bds/permissions.json:${DATA_DIR}/permissions.json"
+  "/data/bds/worlds:${WORLDS_DIR}"
+  "/data/bds/server.properties:${DATA_DIR}/server.properties"
+  "/data/bds/allowlist.json:${DATA_DIR}/allowlist.json"
+  "/data/bds/permissions.json:${DATA_DIR}/permissions.json"
 )
 
 echo "🔗 Checking Bedrock symlinks..."
@@ -53,11 +59,9 @@ fi
 # --- Ensure bedrock-server-software dir exists in addon_configs ---
 readonly SOFTWARE_DIR="${CONFIG_DIR}/bedrock-server-software"
 if [ ! -d "${SOFTWARE_DIR}" ]; then
-  echo "📁 Creating ${SOFTWARE_DIR}..."
   mkdir -p "${SOFTWARE_DIR}"
   chmod 0777 "${SOFTWARE_DIR}"
 fi
-
 
 # ---------- helpers ----------
 isTrue() { case "${1,,}" in true|on|1|yes) return 0 ;; *) return 1 ;; esac; }
@@ -88,7 +92,8 @@ if [[ ${DEBUG^^} = TRUE ]]; then
 fi
 
 # ---------- Determine VERSION & binary path (installed at runtime via install-server.sh) ----------
-readonly BIN_DIR="/opt/bds"
+# BIN_DIR is in /data (persistent volume) — survives container restarts and image rebuilds.
+readonly BIN_DIR="${DATA_DIR}/bds"
 # VERSION_FILE is in /data (persistent volume) so it survives container restarts
 readonly VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 

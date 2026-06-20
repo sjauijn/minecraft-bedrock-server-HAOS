@@ -90,21 +90,20 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /opt/install-server.sh           ixr,
   /opt/healthcheck.sh              ixr,
 
-  # ====== Add-on directory (BDS binary, libs, resources) ======
+  # ====== Add-on directory (scripts, libs, resources) ======
   /opt/                            r,
   /opt/**                          rixwlk,
-
-  # ====== Bedrock server directory ======
-  /opt/bds/                        r,
-  /opt/bds/**                      rixwlk,
 
   # ====== Flask web UI files ======
   /opt/flask/                      r,
   /opt/flask/**                    rixwlk,
 
   # ====== Persistent data volume ======
+  # /data/bds/ — BDS binary and resource files (runtime-installed, persistent)
   /data/                           r,
   /data/**                         rixwlk,
+  /data/bds/                       r,
+  /data/bds/**                     rixwlk,
 
   # ====== Shared HA storage ======
   /share/                          r,
@@ -146,11 +145,12 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /var/log/                        r,
   /var/log/**                      rw,
 
-  # ====== /proc (needed by bash pid checks and entrypoint-demoter) ======
+  # ====== /proc (needed by bash pid checks, entrypoint-demoter, and send-command) ======
   /proc/                           r,
   /proc/*/                         r,
   /proc/*/status                   r,
   /proc/*/fd/                      r,
+  /proc/*/fd/0                     w,    # send-command writes to bedrock server stdin
   /proc/self/                      r,
   /proc/self/**                    r,
   /proc/sys/kernel/ngroups_max     r,

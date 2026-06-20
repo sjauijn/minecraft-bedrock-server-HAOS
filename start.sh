@@ -76,7 +76,6 @@ cd /opt/flask
 echo "🚀 Starting Flask webserver on port ${FLASK_PORT}..."
 waitress-serve --listen=0.0.0.0:${FLASK_PORT} app:app &
 
-cd /opt/bds
 start_bedrock_server "$@"
 
 while true; do

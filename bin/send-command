@@ -30,7 +30,7 @@ send_with_proc_scan() {
   local cmd="$1"
   local proc
 
-  proc=$(find /proc -mindepth 2 -maxdepth 2 -name exe -lname '/data/bedrock_server-*' -printf '%h' -quit 2>/dev/null || true)
+  proc=$(find /proc -mindepth 2 -maxdepth 2 -name exe -lname '/data/bds/bedrock_server-*' -printf '%h' -quit 2>/dev/null || true)
 
   if [[ -n "${proc:-}" ]]; then
     printf '%s\n' "${cmd}" >"${proc}/fd/0"

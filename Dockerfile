@@ -63,14 +63,11 @@ COPY web/app.py /opt/flask/app.py
 COPY web/static /opt/flask/static
 COPY bin/* /usr/local/bin/
 
-# Bedrock binary directory voorbereiden (leeg; wordt gevuld at runtime)
+# Prepare /opt/bds as an empty compatibility directory.
+# The real BDS binary lives at /data/bds (persistent volume, written at runtime
+# by install-server.sh). Symlinks for worlds/server.properties/allowlist/permissions
+# are created by bedrock-entry.sh at each startup so they always point to /data.
 RUN mkdir -p /opt/bds
-
-# Symlinks voor data directory (runtime-schrijfrechten)
-RUN ln -sfn /data/worlds            /opt/bds/worlds && \
-    ln -sfn /data/server.properties /opt/bds/server.properties && \
-    ln -sfn /data/allowlist.json    /opt/bds/allowlist.json && \
-    ln -sfn /data/permissions.json  /opt/bds/permissions.json
 
 # Maak scripts uitvoerbaar
 RUN chmod +x /opt/bedrock-entry.sh

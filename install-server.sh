@@ -5,11 +5,12 @@
 # =============================================================================
 set -eo pipefail
 
-readonly BIN_DIR="/opt/bds"
 readonly DATA_DIR="${DATA_DIR:-/data}"
 readonly CONFIG_DIR="/config"
 readonly SOFTWARE_DIR="${CONFIG_DIR}/bedrock-server-software"
-# VERSION_FILE persists across container restarts (mounted volume)
+# BIN_DIR and VERSION_FILE are both inside /data (persistent volume) so they
+# survive container restarts and image rebuilds.
+readonly BIN_DIR="${DATA_DIR}/bds"
 readonly VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -39,12 +40,19 @@ echo "║   🧱  Minecraft Bedrock Server — Software Install / Upgrade Mode  
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# ─── Step 1: ensure software directory exists ─────────────────────────────────
+# ─── Step 1: ensure required directories exist ────────────────────────────────
 if [ ! -d "${SOFTWARE_DIR}" ]; then
     log "📁 Creating software directory: ${SOFTWARE_DIR}"
     mkdir -p "${SOFTWARE_DIR}"
     chmod 0777 "${SOFTWARE_DIR}"
-    log_ok "Directory created."
+    log_ok "Directory created: ${SOFTWARE_DIR}"
+fi
+
+if [ ! -d "${BIN_DIR}" ]; then
+    log "📁 Creating server binary directory: ${BIN_DIR}"
+    mkdir -p "${BIN_DIR}"
+    chmod 0755 "${BIN_DIR}"
+    log_ok "Directory created: ${BIN_DIR}"
 fi
 
 # ─── Step 2: read currently installed version ─────────────────────────────────
