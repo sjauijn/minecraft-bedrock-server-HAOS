@@ -114,23 +114,80 @@ BIN_DIR="/opt/bds"
 mkdir -p "${BIN_DIR}"
 
 # ---------- Resolve "LATEST"/"PREVIEW" to a concrete version + download URL ----------
-# Mirrors itzg/docker-minecraft-bedrock-server's resolution logic against
-# minecraft.net's official download page, since Mojang doesn't host a JSON API.
+# Mirrors itzg/docker-minecraft-bedrock-server's resolution logic:
+#  1) primary: scrape the official download page with `restify` (already bundled
+#     in this image), looking for the <a data-platform="serverBedrock...Linux">
+#     element, which is far more robust than regexing raw HTML.
+#  2) fallback: query the community JSON helper used by itzg as a backup when
+#     minecraft.net's markup changes and breaks the scrape.
 BDS_DOWNLOAD_PAGE="https://www.minecraft.net/en-us/download/server/bedrock"
+MC_BDS_HELPER_URL="https://mc-bds-helper.vercel.app/api/latest"
+
+resolve_via_restify() {
+  local want_preview="$1"
+  local platform="serverBedrockLinux"
+  [[ "$want_preview" == "true" ]] && platform="serverBedrockPreviewLinux"
+
+  if ! command -v restify >/dev/null 2>&1; then
+    return 1
+  fi
+
+  local json url
+  json="$(restify --user-agent="itzg/minecraft-bedrock-server" \
+            --headers 'accept-language:*' \
+            --attribute="data-platform=${platform}" \
+            "${BDS_DOWNLOAD_PAGE}" 2>/dev/null || true)"
+  [[ -z "$json" ]] && return 1
+
+  url="$(echo "$json" | jq -r '.[0].href // empty' 2>/dev/null || true)"
+  [[ -z "$url" ]] && return 1
+
+  echo "$url"
+  return 0
+}
+
+resolve_via_helper_api() {
+  local want_preview="$1"
+  local json url
+  json="$(curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors "${MC_BDS_HELPER_URL}" 2>/dev/null || true)"
+  [[ -z "$json" ]] && return 1
+
+  if [[ "$want_preview" == "true" ]]; then
+    url="$(echo "$json" | jq -r '.preview.linux // .serverBedrockPreviewLinux // empty' 2>/dev/null || true)"
+  else
+    url="$(echo "$json" | jq -r '.stable.linux // .serverBedrockLinux // empty' 2>/dev/null || true)"
+  fi
+  [[ -z "$url" ]] && return 1
+
+  echo "$url"
+  return 0
+}
 
 resolve_latest_url() {
   local want_preview="$1"
-  local html url
-  html="$(curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
-    -A "Mozilla/5.0 (itzg/minecraft-bedrock-server compatible HAOS add-on)" \
-    "${BDS_DOWNLOAD_PAGE}" || true)"
+  local url=""
 
-  if [[ "$want_preview" == "true" ]]; then
-    url="$(echo "$html" | grep -oE 'https://[a-zA-Z0-9./_-]*bedrock-server-[0-9.]*\.zip' | grep -i preview | head -n1)"
-  else
-    url="$(echo "$html" | grep -oE 'https://[a-zA-Z0-9./_-]*bedrock-server-[0-9.]*\.zip' | grep -iv preview | head -n1)"
+  url="$(resolve_via_restify "$want_preview" || true)"
+  if [[ -n "$url" ]]; then
+    echo "$url"
+    return 0
   fi
-  echo "$url"
+
+  echo "⚠️ Could not scrape ${BDS_DOWNLOAD_PAGE}, trying fallback helper API..." >&2
+  url="$(resolve_via_helper_api "$want_preview" || true)"
+  if [[ -n "$url" ]]; then
+    echo "$url"
+    return 0
+  fi
+
+  return 1
+}
+
+extract_version_from_url() {
+  # Pulls the dotted version number out of a bedrock-server-X.Y.Z.W.zip URL
+  # without relying on `head`, which can be unavailable to a demoted user.
+  local in="$1"
+  [[ "$in" =~ bedrock-server-([0-9]+(\.[0-9]+){2,3})\.zip ]] && echo "${BASH_REMATCH[1]}"
 }
 
 DOWNLOAD_URL=""
@@ -138,17 +195,17 @@ RESOLVED_VERSION=""
 
 if [[ -n "${DIRECT_DOWNLOAD_URL:-}" ]]; then
   DOWNLOAD_URL="${DIRECT_DOWNLOAD_URL}"
-  RESOLVED_VERSION="$(echo "$DOWNLOAD_URL" | grep -oE '[0-9]+(\.[0-9]+){2,3}' | head -n1)"
+  RESOLVED_VERSION="$(extract_version_from_url "$DOWNLOAD_URL")"
 elif [[ "$VERSION" == "LATEST" || "$VERSION" == "PREVIEW" ]]; then
   echo "🔎 Resolving ${VERSION} Bedrock server version from minecraft.net..."
-  DOWNLOAD_URL="$(resolve_latest_url "$( [[ "$VERSION" == "PREVIEW" ]] && echo true || echo false )")"
+  DOWNLOAD_URL="$(resolve_latest_url "$( [[ "$VERSION" == "PREVIEW" ]] && echo true || echo false )" || true)"
   if [[ -z "$DOWNLOAD_URL" ]]; then
-    echo "ERROR: Could not resolve ${VERSION} download URL from ${BDS_DOWNLOAD_PAGE}."
+    echo "ERROR: Could not resolve ${VERSION} download URL from ${BDS_DOWNLOAD_PAGE} or fallback API."
     echo "       You can pin DIRECT_DOWNLOAD_URL to a bedrock-server-VERSION.zip as a workaround,"
     echo "       or set 'Minecraft Game Version' to a specific known version (e.g. 1.21.50.10)."
     exit 2
   fi
-  RESOLVED_VERSION="$(echo "$DOWNLOAD_URL" | grep -oE '[0-9]+(\.[0-9]+){2,3}' | head -n1)"
+  RESOLVED_VERSION="$(extract_version_from_url "$DOWNLOAD_URL")"
 else
   # Specific pinned version requested, e.g. "1.21.50.10"
   RESOLVED_VERSION="$VERSION"
@@ -160,7 +217,7 @@ else
 fi
 
 if [[ -z "$RESOLVED_VERSION" ]]; then
-  echo "ERROR: Failed to determine resolved Bedrock version string."
+  echo "ERROR: Failed to determine resolved Bedrock version string from URL: ${DOWNLOAD_URL}"
   exit 2
 fi
 
