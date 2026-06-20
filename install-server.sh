@@ -132,15 +132,15 @@ elif version_gt "${INSTALLED_VERSION}" "${ZIP_VERSION}"; then
             printf  "║   Current version  :  %-47s║\n" "${INSTALLED_VERSION}"
             printf  "║   Target version   :  %-47s║\n" "${ZIP_VERSION}"
             echo "║                                                                      ║"
-            echo "║   ⛔  ALL SERVER DATA AND WORLDS WILL BE PERMANENTLY DELETED!       ║"
-            echo "║       This action cannot be undone.                                  ║"
+            echo "║   ⛔  THE INSTALLED SERVER SOFTWARE WILL BE REMOVED AND REPLACED.   ║"
+            echo "║       Your worlds and configuration will be preserved.               ║"
             echo "║                                                                      ║"
-            echo "║   To CANCEL: stop the add-on within the next 10 seconds.            ║"
+            echo "║   To CANCEL: stop the add-on within the next 30 seconds.            ║"
             echo "║                                                                      ║"
             echo "╚══════════════════════════════════════════════════════════════════════╝"
             echo ""
 
-            for i in 10 9 8 7 6 5 4 3 2 1; do
+            for i in 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
                 echo "  ⏳  Downgrade starts in ${i} second(s) — stop the add-on now to cancel..."
                 sleep 1
             done
@@ -149,27 +149,20 @@ elif version_gt "${INSTALLED_VERSION}" "${ZIP_VERSION}"; then
             echo "  🗑️  Countdown complete. Beginning downgrade procedure..."
             echo ""
 
-            # ── Wipe /data/bds (installed binary + libs) ────────────────────
+            # ── Wipe /data/bds (installed binary + libs only) ───────────────
+            # Worlds and bedrock-server-software are preserved.
             log "🗑️  Removing installed server binary directory: ${BIN_DIR}"
             rm -rf "${BIN_DIR}"
             mkdir -p "${BIN_DIR}"
             chmod 0755 "${BIN_DIR}"
             log_ok "Binary directory wiped and recreated."
 
-            # ── Wipe /data contents EXCEPT bedrock-server-software and the
-            #    directory itself; keep /config/bedrock-server-software intact ─
-            log "🗑️  Wiping server data in ${DATA_DIR} ..."
-            find "${DATA_DIR}" -mindepth 1 -maxdepth 1 \
-                ! -name "bds" \
-                -exec rm -rf {} + 2>/dev/null || true
-            log_ok "Server data wiped."
-
             # ── Clear version file ──────────────────────────────────────────
             rm -f "${VERSION_FILE}"
             INSTALLED_VERSION=""
 
             echo ""
-            echo "  ✅  All server data removed. Proceeding with installation of ${ZIP_VERSION}..."
+            echo "  ✅  Server software removed. Worlds and config preserved. Proceeding with installation of ${ZIP_VERSION}..."
             echo ""
 
             INSTALL_ACTION="install"
