@@ -1,4 +1,4 @@
-## 1.0.31 - 2026-06-20
+## 1.0.28-plus - 2026-06-20
 
 ### Breaking change — BDS software is no longer downloaded automatically
 
