@@ -14,6 +14,14 @@ configuration:
           Enter a specific version (e.g. "1.26.21") to pin the server to that
           exact version and prevent it from changing on add-on updates/restarts.
           Use "preview" to run the latest preview/beta build.
+      mc_download_url:
+        name: "Custom Download URL"
+        description: >-
+          Optional. Paste a direct bedrock-server-VERSION.zip link (copy it from
+          the Download button on minecraft.net/en-us/download/server/bedrock) to
+          bypass automatic version lookup entirely. When set, this always takes
+          priority over "Minecraft Game Version". Leave empty to use automatic
+          resolution instead.
       server_name:
         name: Display name
         description: Name shown to players in their server list.
