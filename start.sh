@@ -46,7 +46,7 @@ case "${ALLOW_DOWNGRADE,,}" in
                 echo "║                                                                      ║"
                 echo "╚══════════════════════════════════════════════════════════════════════╝"
                 echo ""
-                tail -f /dev/null
+                exit 1
                 ;;
         esac
         ;;

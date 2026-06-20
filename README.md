@@ -1,16 +1,16 @@
 # Minecraft Bedrock Server Add-on for Home Assistant
 
-Run your own **Minecraft Bedrock Server** directly inside Home Assistant – with support for automatic updates, multiple worlds, MCPack installation, and full configuration through the HA UI.
+Run your own **Minecraft Bedrock Server** directly inside Home Assistant — with support for manual software installation, multiple worlds, MCPack installation, and full configuration through the HA UI.
 
 This add-on is designed for **simplicity**, **performance**, and **zero-maintenance hosting** for families, kids, or LAN-based multiplayer.
 
-**Important** EULA setting must be set to true in order to start server.
+**Important:** EULA must be accepted in the add-on UI before the server will start.
 
 ---
 
 ## Credits & acknowledgements
 
-This add-on builds upon several excellent open-source tools.  
+This add-on builds upon several excellent open-source tools.
 Full credit and appreciation go to the original authors and maintainers:
 
 | Tool | Purpose | Author / Project |
@@ -21,47 +21,100 @@ Full credit and appreciation go to the original authors and maintainers:
 | **Restify** | Lightweight REST API helper for runtime control | [itzg](https://github.com/itzg/) |
 | **Easy Add** | Simplified add-on runtime utilities | [itzg](https://github.com/itzg/) |
 
+---
+
+## What's different from the original docker image
+
+This fork removes all automatic Bedrock software downloading. Instead, you upload the server ZIP yourself — giving you full control over which version is running. It also moves the `worlds` directory to `addon_configs/<slug>/worlds/`, making saves accessible via SFTP.
+
+| | Original | This fork |
+|---|---|---|
+| `worlds` location | `/data/worlds/` | `addon_configs/<slug>/worlds/` |
+| Accessible via SFTP | No | Yes |
+| BDS software management | Auto-download on start | Manual ZIP upload |
+| Version control | Auto-latest | You choose |
+| Upgrade support | Automatic | Upload newer ZIP |
+| Downgrade support | No | Yes (with 30-second safety countdown) |
+
+---
 
 ## ✨ Features
 
 | Feature | Description |
 |:--------|:--------------|
-| ✅ Bedrock Dedicated Server | Runs the official Mojang Bedrock Server inside Home Assistant |
-| 🔄 Auto-version detection | Repository is updated automatically with the latest Bedrock version |
-| 🌍 World configuration | Seeds, world type, difficulty, gamemode & cheats |
-| 👥 Player management | Whitelist/allowlist, default permissions, max player limit |
-| 🚀 Performance tuning | View distance, tick distance, multithreading, compression |
-| 🧱 Anti-cheat controls | Server authoritative movement & validation thresholds |
-| 🧠 Easy UI | Configuration through HA UI with friendly labels & dropdowns |
-| 🌐 LAN visibility toggle | Enable/disable server broadcast on local network |
-| 🧑‍💻 Works with host network | No port mapping headaches — plug & play |
+| Bedrock Dedicated Server | Runs the official Mojang Bedrock Server inside Home Assistant |
+| Manual software management | You control which version is installed — no automatic downloads |
+| Upgrade support | Upload a newer ZIP to upgrade the server software |
+| Downgrade support | Optionally install an older version with a 30-second safety countdown |
+| World configuration | Seeds, world type, difficulty, gamemode & cheats |
+| Player management | Whitelist/allowlist, default permissions, max player limit |
+| Performance tuning | View distance, tick distance, multithreading, compression |
+| Anti-cheat controls | Server authoritative movement & validation thresholds |
+| Easy UI | Configuration through HA UI with friendly labels & dropdowns |
+| LAN visibility toggle | Enable/disable server broadcast on local network |
+| Works with host network | No port mapping headaches — plug & play |
+
+---
 
 ## 🏗 Installation
 
-1. Add this repository to Home Assistant Add-on Store: `https://github.com/KevinHekert/HomeAssistantAddOns/`
-2. Install **Minecraft Server** add-on  
-3. Open Configuration tab  
-4. Adjust settings as needed  
-5. Start the add-on  
+1. Add this repository to Home Assistant Add-on Store:
+   `https://github.com/sjauijn/minecraft-bedrock-server-HAOS`
+2. Install the **Minecraft Bedrock Server** add-on
+3. Start the add-on — it will create the `bedrock-server-software` directory and wait
+4. Download the **Bedrock Dedicated Server for Ubuntu/Debian** ZIP from:
+   https://www.minecraft.net/download/server/bedrock
+5. Upload the ZIP (e.g. `bedrock-server-1.26.21.1.zip`) to:
+   `addon_configs/<slug>/bedrock-server-software/`
+6. Restart the add-on — it will install the software automatically
+7. Set **Installing/Upgrading Server** to `false` in the Configuration tab
+8. Restart the add-on — the server starts
+9. Accept the EULA in the add-on UI and restart one final time
 
-> First startup may take longer due to version download.
-
----
-
-## What's different from the original
-
-This fork moves the `worlds` directory from the internal `/data/worlds/` to `/addon_configs/mc_server_ha/worlds/`, making world saves accessible via SFTP without needing Portainer or Docker console access.
-
-| | Original | This fork |
-|---|---|---|
-| `worlds` location | `/data/worlds/` | `/addon_configs/mc_server_ha/worlds/` |
-| Accessible via SFTP | ❌ | ✅ |
-| Other data files | `/data/` | `/data/` (unchanged) |
-
-**Migration**: On first start, if you already have worlds in `/data/worlds/`, they will be automatically moved to the new location.
+> The `bedrock-server-software` directory and your `worlds` are never deleted, even during a downgrade.
 
 ---
 
+## 📦 Manual Software Management
+
+### Installing or upgrading
+
+1. In Configuration, set **Installing/Upgrading Server** to `true`
+2. Upload `bedrock-server-<version>.zip` to `addon_configs/<slug>/bedrock-server-software/`
+3. Restart the add-on
+4. After installation completes, set **Installing/Upgrading Server** to `false` and restart
+
+The add-on compares the ZIP version against the installed version and:
+
+- **Fresh install** — installs if nothing is currently installed
+- **Upgrade** — installs if the ZIP version is newer than the installed version
+- **Already installed** — skips without changes if the same version is present
+- **Downgrade** — blocked by default; enable `Allow Downgrade` to proceed
+
+### Downgrading
+
+To install an older version than the one currently installed:
+
+1. Set **Allow Downgrade** to `true` AND **Installing/Upgrading Server** to `true`
+2. Upload the older `bedrock-server-<version>.zip` to the software directory
+3. Restart the add-on
+
+A warning banner appears in the logs with a **30-second countdown**. Stop the add-on during this window to cancel. After the countdown, the installed server software is removed and replaced with the older version. Your worlds and configuration are fully preserved.
+
+> Setting `Allow Downgrade: true` with `Installing/Upgrading Server: false` is a configuration error — the add-on will refuse to start and display a clear error in the logs. After completing a downgrade, set both options back to `false`.
+
+### Directory layout
+
+```
+addon_configs/<slug>/
+├── bedrock-server-software/    <- upload bedrock-server-*.zip here
+└── worlds/                     <- your world saves (accessible via SFTP)
+
+/data/
+├── bds/                        <- installed server binary and libraries
+├── .installed-bds-version      <- tracks the installed version
+└── server.properties           <- server configuration
+```
 
 ---
 
@@ -69,9 +122,17 @@ This fork moves the `worlds` directory from the internal `/data/worlds/` to `/ad
 
 All settings can be modified via the Home Assistant Add-on UI.
 
-The configuration is grouped into 5 logical sections:
+### 🔧 Software Management
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| Installing/Upgrading Server | `true` | When `true`, the add-on runs in install/upgrade mode only — the Bedrock server will not start |
+| Allow Downgrade | `false` | When `true` (combined with Installing/Upgrading Server), allows installing an older version with a 30-second safety countdown |
+
+---
 
 ### 🧩 General
+
 Core server behavior such as name, ports, online mode, and LAN visibility.
 
 | Setting | Description |
@@ -85,6 +146,7 @@ Core server behavior such as name, ports, online mode, and LAN visibility.
 ---
 
 ### 🌍 World
+
 Controls how your world looks, feels, and behaves.
 
 | Setting | Options |
@@ -128,12 +190,9 @@ Tweak simulation radius, CPU usage & bandwidth.
 Server authoritative movement ensures fair gameplay and prevents hacked clients.
 
 | Setting | Options |
-|:--------|:------------|
+|:--------|:--------|
 | Movement authority | Client / Server / Server+Rewind |
 | Block breaking validation | Validate block break actions |
 | Score threshold | Cheating sensitivity |
 | Distance & duration thresholds | Movement tolerance |
 | Correct movement | Fixes illegal movement via teleport |
-
----
-

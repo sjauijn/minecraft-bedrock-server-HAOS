@@ -1,3 +1,55 @@
+## 1.0.31 - 2026-06-20
+
+### Breaking change — BDS software is no longer downloaded automatically
+
+The add-on no longer downloads or manages the Minecraft Bedrock Dedicated Server software
+on its own. You now upload the server ZIP manually and control which version is installed.
+
+#### New: Manual software installation mode
+
+- Added `Installing/Upgrading Server` configuration option (default `true`)
+- When `true`, the add-on runs in install/upgrade mode only — the Bedrock server does not start
+- On first run the add-on creates `addon_configs/<slug>/bedrock-server-software/` and waits
+- Upload `bedrock-server-<version>.zip` to that directory and restart to install
+- After installation, set `Installing/Upgrading Server` to `false` and restart to start the server
+
+#### Install / upgrade logic
+
+- **Fresh install** — installs if no version is currently installed
+- **Upgrade** — installs if the ZIP version is newer than the installed version
+- **Already installed** — skips without changes and shows a clear log message
+- **Downgrade** — blocked by default; requires `Allow Downgrade: true` to proceed
+
+#### New: Downgrade support with safety countdown
+
+- Added `Allow Downgrade` configuration option (default `false`)
+- When `true` together with `Installing/Upgrading Server: true`, allows installing an older version
+- A warning banner with a **30-second countdown** is printed in the logs before any action
+- Stopping the add-on during the countdown cancels the downgrade
+- Only the installed server software (`/data/bds/`) is removed during a downgrade
+- Worlds (`addon_configs/<slug>/worlds/`) and `bedrock-server-software/` are always preserved
+- Setting `Allow Downgrade: true` with `Installing/Upgrading Server: false` is a configuration error — the add-on exits immediately with a clear error message (previously it fell through and started the server anyway — fixed)
+
+#### Persistence fix
+
+- Installed server binary and libraries are now stored in `/data/bds/` (persistent volume)
+  instead of `/opt/bds/` (Docker image layer that was wiped on every container restart)
+- Installed version is tracked in `/data/.installed-bds-version` (persistent)
+
+#### Runtime fix
+
+- BDS is now launched with its working directory set to `/data/bds/` so it correctly
+  resolves `server.properties`, `allowlist.json`, `permissions.json`, and `worlds/` by
+  relative path, as Mojang's binary requires
+
+#### README
+
+- Fully rewritten to reflect manual software management workflow
+- Added Software Management configuration section
+- Added directory layout reference
+- Added step-by-step installation guide
+- Added upgrade and downgrade procedures
+
 ## 1.0.28 - 2026-06-19
 - Updated Bedrock Server from '1.26.30.5' to '1.26.31.1
 
