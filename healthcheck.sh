@@ -5,7 +5,7 @@ DATA_DIR="${DATA_DIR:-/data}"
 CONFIG_FILE="${DATA_DIR}/config/bedrock_for_ha_config.json"
 OPTIONS_FILE="${DATA_DIR}/options.json"
 STOP_MARKER="${DATA_DIR}/run/bedrock_server.stopped"
-VERSION_FILE="/opt/bds/.installed-version"
+VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
 # ─── Install/Upgrade mode: always healthy (only logs are shown) ────────────────
 get_option() {

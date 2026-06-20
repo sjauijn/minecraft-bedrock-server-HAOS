@@ -6,10 +6,8 @@ DATA_DIR="${DATA_DIR:-/data}"
 RUNTIME_DIR="${DATA_DIR}/run"
 BEDROCK_PID_FILE="${RUNTIME_DIR}/bedrock_server.pid"
 STOP_MARKER="${RUNTIME_DIR}/bedrock_server.stopped"
-
-# ─── Read HA add-on config ────────────────────────────────────────────────────
-# Home Assistant writes add-on options to /data/options.json
 OPTIONS_FILE="${DATA_DIR}/options.json"
+VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
 get_option() {
     local key="$1"
@@ -24,20 +22,36 @@ INSTALL_UPGRADE_MODE="$(get_option 'install_upgrade_server')"
 case "${INSTALL_UPGRADE_MODE,,}" in
     true|1|yes|on)
         echo ""
-        echo "═══════════════════════════════════════════════════════════════════"
-        echo "  🔧  Minecraft Bedrock Server Software — Installing/Upgrading Mode"
-        echo "═══════════════════════════════════════════════════════════════════"
+        echo "═══════════════════════════════════════════════════════════════════════"
+        echo "  🔧  Minecraft Bedrock Server Software — Installing / Upgrading Mode"
+        echo "═══════════════════════════════════════════════════════════════════════"
         echo ""
         echo "  The add-on is running in software installation / upgrade mode."
         echo "  The Minecraft Bedrock Server will NOT be started in this mode."
         echo ""
         exec /opt/install-server.sh
-        # exec replaces this process; nothing below runs after success
         ;;
 esac
 
-# ─── Normal server start ──────────────────────────────────────────────────────
+# ─── Normal server mode: guard against missing software ──────────────────────
+if [ ! -f "${VERSION_FILE}" ]; then
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════╗"
+    echo "║  ❌  Minecraft Bedrock Server software is not installed yet.         ║"
+    echo "║                                                                      ║"
+    echo "║  In the add-on Configuration, set:                                  ║"
+    echo "║     Installing/Upgrading Server: true                               ║"
+    echo "║  and restart the add-on to enter installation mode.                 ║"
+    echo "║                                                                      ║"
+    echo "║  Then upload bedrock-server-*.zip to:                               ║"
+    echo "║     📂  addon_configs/<this-addon>/bedrock-server-software/         ║"
+    echo "╚══════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    # Keep container alive so HA doesn't restart-loop; user needs to change config
+    tail -f /dev/null
+fi
 
+# ─── Normal server start ──────────────────────────────────────────────────────
 start_bedrock_server() {
     echo "🎮 Starting Bedrock server..."
     mkdir -p "${RUNTIME_DIR}"

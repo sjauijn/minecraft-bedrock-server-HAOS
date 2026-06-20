@@ -6,19 +6,19 @@
 set -eo pipefail
 
 readonly BIN_DIR="/opt/bds"
+readonly DATA_DIR="${DATA_DIR:-/data}"
 readonly CONFIG_DIR="/config"
 readonly SOFTWARE_DIR="${CONFIG_DIR}/bedrock-server-software"
-readonly VERSION_FILE="${BIN_DIR}/.installed-version"
+# VERSION_FILE persists across container restarts (mounted volume)
+readonly VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
-# ─── helpers ─────────────────────────────────────────────────────────────────
-
+# ─── helpers ──────────────────────────────────────────────────────────────────
 log()      { echo "$*"; }
 log_info() { echo "  ℹ️  $*"; }
 log_ok()   { echo "  ✅ $*"; }
 log_warn() { echo "  ⚠️  $*"; }
 log_err()  { echo "  ❌ $*"; }
 
-# Compare two version strings (dot-separated).
 # Returns 0 if $1 > $2 , 1 if equal, 2 if $1 < $2
 version_gt() {
     [[ "$1" == "$2" ]] && return 1
@@ -32,16 +32,14 @@ version_gt() {
     return 1
 }
 
-# ─── Banner ──────────────────────────────────────────────────────────────────
-
+# ─── Banner ───────────────────────────────────────────────────────────────────
 echo ""
-echo "╔══════════════════════════════════════════════════════════════════╗"
-echo "║   🧱  Minecraft Bedrock Server — Software Install / Upgrade Mode  ║"
-echo "╚══════════════════════════════════════════════════════════════════╝"
+echo "╔══════════════════════════════════════════════════════════════════════╗"
+echo "║   🧱  Minecraft Bedrock Server — Software Install / Upgrade Mode     ║"
+echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
 # ─── Step 1: ensure software directory exists ─────────────────────────────────
-
 if [ ! -d "${SOFTWARE_DIR}" ]; then
     log "📁 Creating software directory: ${SOFTWARE_DIR}"
     mkdir -p "${SOFTWARE_DIR}"
@@ -50,7 +48,6 @@ if [ ! -d "${SOFTWARE_DIR}" ]; then
 fi
 
 # ─── Step 2: read currently installed version ─────────────────────────────────
-
 if [ -f "${VERSION_FILE}" ]; then
     INSTALLED_VERSION="$(cat "${VERSION_FILE}" | tr -d '[:space:]')"
 else
@@ -58,40 +55,20 @@ else
 fi
 
 if [ -z "${INSTALLED_VERSION}" ]; then
-    echo ""
-    echo "┌─────────────────────────────────────────────────────────────────┐"
-    echo "│  📦  No Minecraft Bedrock Server software is currently installed. │"
-    echo "│                                                                   │"
-    echo "│  Please download the Bedrock Dedicated Server for Ubuntu/Debian  │"
-    echo "│  from the official Minecraft website:                            │"
-    echo "│                                                                   │"
-    echo "│     👉  https://www.minecraft.net/download/server/bedrock        │"
-    echo "│                                                                   │"
-    echo "│  Then upload the ZIP file (e.g. bedrock-server-1.26.21.1.zip)   │"
-    echo "│  to the following directory:                                      │"
-    echo "│                                                                   │"
-    echo "│     📂  addon_configs/<this-addon>/bedrock-server-software/      │"
-    echo "│                                                                   │"
-    echo "│  Restart the add-on after uploading to apply the installation.   │"
-    echo "└─────────────────────────────────────────────────────────────────┘"
-    echo ""
     log_info "Installed Minecraft Bedrock Version: none"
 else
     log_info "Installed Minecraft Bedrock Version: ${INSTALLED_VERSION}"
 fi
 
 # ─── Step 3: scan for ZIP file ────────────────────────────────────────────────
-
 ZIP_FILE=""
 ZIP_VERSION=""
 
 for f in "${SOFTWARE_DIR}"/bedrock-server-*.zip; do
     [ -f "$f" ] || continue
-    # Extract version from filename: bedrock-server-1.26.21.1.zip → 1.26.21.1
     fname="$(basename "$f")"
     ver="${fname#bedrock-server-}"
     ver="${ver%.zip}"
-    # Validate it looks like a version number
     if [[ "$ver" =~ ^[0-9]+(\.[0-9]+){1,4}$ ]]; then
         ZIP_FILE="$f"
         ZIP_VERSION="$ver"
@@ -99,75 +76,77 @@ for f in "${SOFTWARE_DIR}"/bedrock-server-*.zip; do
     fi
 done
 
-# ─── Step 4: decide what to do ───────────────────────────────────────────────
-
+# ─── Step 4: no ZIP found ─────────────────────────────────────────────────────
 if [ -z "${ZIP_FILE}" ]; then
     echo ""
-    if [ -n "${INSTALLED_VERSION}" ]; then
-        log_warn "No bedrock-server-*.zip found in ${SOFTWARE_DIR}."
-        log_info "Place a ZIP file there and restart the add-on to install or upgrade."
-    fi
-    # Nothing to install/upgrade — proceed to final message
-    INSTALL_ACTION="none"
-
-elif [ -z "${INSTALLED_VERSION}" ]; then
-    log ""
-    log "🔍 Found package:  bedrock-server-${ZIP_VERSION}.zip"
-    log "📥 No previous installation detected — performing fresh install…"
-    INSTALL_ACTION="install"
-
-else
-    log ""
-    log "🔍 Found package:  bedrock-server-${ZIP_VERSION}.zip"
-    log_info "Installed Minecraft Bedrock Version: ${INSTALLED_VERSION}"
-
-    if version_gt "${ZIP_VERSION}" "${INSTALLED_VERSION}"; then
-        log "🔼 Upgrade available: ${INSTALLED_VERSION} → ${ZIP_VERSION}"
-        INSTALL_ACTION="upgrade"
-    elif version_gt "${INSTALLED_VERSION}" "${ZIP_VERSION}"; then
-        echo ""
-        echo "┌──────────────────────────────────────────────────────────────────┐"
-        echo "│  ⬇️  Downgrade Detected                                           │"
-        echo "│                                                                    │"
-        printf "│  Current :  %-52s│\n" "${INSTALLED_VERSION}"
-        printf "│  Package :  %-52s│\n" "${ZIP_VERSION}"
-        echo "│                                                                    │"
-        echo "│  Downgrading Bedrock Server is not supported and may corrupt      │"
-        echo "│  your worlds. Remove the ZIP file and restart to skip.            │"
-        echo "└──────────────────────────────────────────────────────────────────┘"
-        echo ""
-        INSTALL_ACTION="none"
-    else
-        # Same version
-        echo ""
-        echo "┌──────────────────────────────────────────────────────────────────┐"
-        echo "│  ✅  Upgrade Not Required                                          │"
-        echo "│                                                                    │"
-        printf "│  Version %-55s│\n" "${INSTALLED_VERSION} is already installed."
-        echo "│  No changes have been made to the Bedrock Server software.        │"
-        echo "└──────────────────────────────────────────────────────────────────┘"
-        echo ""
-        INSTALL_ACTION="none"
-    fi
+    echo "┌──────────────────────────────────────────────────────────────────────┐"
+    echo "│  📦  No Bedrock Server ZIP found in the software directory.           │"
+    echo "│                                                                        │"
+    echo "│  Please download the Bedrock Dedicated Server for Ubuntu/Debian       │"
+    echo "│  from the official Minecraft website:                                 │"
+    echo "│                                                                        │"
+    echo "│     👉  https://www.minecraft.net/download/server/bedrock             │"
+    echo "│                                                                        │"
+    echo "│  Upload the ZIP file (e.g. bedrock-server-1.26.21.1.zip) to:         │"
+    echo "│                                                                        │"
+    echo "│     📂  addon_configs/<this-addon>/bedrock-server-software/           │"
+    echo "│                                                                        │"
+    echo "│  Then restart the add-on to perform the installation.                 │"
+    echo "└──────────────────────────────────────────────────────────────────────┘"
+    echo ""
+    # Exit non-zero so HA logs show a clear failure, not "complete"
+    exit 1
 fi
 
-# ─── Step 5: perform install / upgrade ───────────────────────────────────────
+log ""
+log "🔍 Found package: bedrock-server-${ZIP_VERSION}.zip"
 
+# ─── Step 5: decide install / upgrade / skip ──────────────────────────────────
+INSTALL_ACTION="none"
+
+if [ -z "${INSTALLED_VERSION}" ]; then
+    log "📥 No previous installation detected — performing fresh install…"
+    INSTALL_ACTION="install"
+elif version_gt "${ZIP_VERSION}" "${INSTALLED_VERSION}"; then
+    log "🔼 Upgrade available: ${INSTALLED_VERSION} → ${ZIP_VERSION}"
+    INSTALL_ACTION="upgrade"
+elif version_gt "${INSTALLED_VERSION}" "${ZIP_VERSION}"; then
+    echo ""
+    echo "┌──────────────────────────────────────────────────────────────────────┐"
+    echo "│  ⬇️  Downgrade Detected — operation aborted.                          │"
+    echo "│                                                                        │"
+    printf  "│     Installed : %-55s│\n" "${INSTALLED_VERSION}"
+    printf  "│     Package   : %-55s│\n" "${ZIP_VERSION}"
+    echo "│                                                                        │"
+    echo "│  Downgrading may corrupt worlds. Remove the ZIP and restart.          │"
+    echo "└──────────────────────────────────────────────────────────────────────┘"
+    echo ""
+    exit 1
+else
+    echo ""
+    echo "┌──────────────────────────────────────────────────────────────────────┐"
+    echo "│  ✅  Version ${ZIP_VERSION} is already installed — nothing to do.    "
+    echo "│      No changes have been made to the Bedrock Server software.        │"
+    echo "└──────────────────────────────────────────────────────────────────────┘"
+    echo ""
+    INSTALL_ACTION="skip"
+fi
+
+# ─── Step 6: perform install / upgrade ───────────────────────────────────────
 if [ "${INSTALL_ACTION}" = "install" ] || [ "${INSTALL_ACTION}" = "upgrade" ]; then
     echo ""
     if [ "${INSTALL_ACTION}" = "install" ]; then
-        echo "┌──────────────────────────────────────────────────────────────────┐"
-        echo "│  📥  Installing Minecraft Bedrock Server ${ZIP_VERSION}          "
-        echo "└──────────────────────────────────────────────────────────────────┘"
+        echo "┌──────────────────────────────────────────────────────────────────────┐"
+        printf "│  📥  Installing Minecraft Bedrock Server %-31s│\n" "${ZIP_VERSION}"
+        echo "└──────────────────────────────────────────────────────────────────────┘"
     else
-        echo "┌──────────────────────────────────────────────────────────────────┐"
-        echo "│  🔼  Upgrading Minecraft Bedrock Server                           │"
-        printf "│      %s  →  %-48s│\n" "${INSTALLED_VERSION}" "${ZIP_VERSION}"
-        echo "└──────────────────────────────────────────────────────────────────┘"
+        echo "┌──────────────────────────────────────────────────────────────────────┐"
+        printf "│  🔼  Upgrading: %-55s│\n" "${INSTALLED_VERSION} → ${ZIP_VERSION}"
+        echo "└──────────────────────────────────────────────────────────────────────┘"
     fi
     echo ""
 
-    # Back up old binary if upgrading
+    # Remove old binary when upgrading
     if [ "${INSTALL_ACTION}" = "upgrade" ]; then
         OLD_BIN="${BIN_DIR}/bedrock_server-${INSTALLED_VERSION}"
         if [ -f "${OLD_BIN}" ]; then
@@ -176,50 +155,43 @@ if [ "${INSTALL_ACTION}" = "install" ] || [ "${INSTALL_ACTION}" = "upgrade" ]; t
         fi
     fi
 
-    # Extract server software to a temp dir first, then move to /opt/bds
     EXTRACT_TMP="$(mktemp -d)"
     log "📦 Extracting ${ZIP_FILE} …"
     unzip -q "${ZIP_FILE}" -d "${EXTRACT_TMP}"
 
-    # Move everything into /opt/bds, preserving symlinks
     log "📂 Installing files to ${BIN_DIR} …"
-    # Copy all files except those that are symlinked (worlds, server.properties, etc.)
-    SYMLINKED=("worlds" "server.properties" "allowlist.json" "permissions.json")
+    SKIP_NAMES=("worlds" "server.properties" "allowlist.json" "permissions.json")
     shopt -s dotglob nullglob
     for item in "${EXTRACT_TMP}/"*; do
         name="$(basename "$item")"
         skip=0
-        for sl in "${SYMLINKED[@]}"; do
-            [[ "$name" == "$sl" ]] && skip=1 && break
+        for s in "${SKIP_NAMES[@]}"; do
+            [[ "$name" == "$s" ]] && skip=1 && break
         done
         [ "$skip" -eq 1 ] && continue
         cp -a "$item" "${BIN_DIR}/"
     done
     shopt -u dotglob nullglob
 
-    # Rename binary with version suffix (matches bedrock-entry.sh expectation)
-    if [ -f "${BIN_DIR}/bedrock_server" ]; then
-        chmod +x "${BIN_DIR}/bedrock_server"
-        mv "${BIN_DIR}/bedrock_server" "${BIN_DIR}/bedrock_server-${ZIP_VERSION}"
-        log_ok "Binary installed as: bedrock_server-${ZIP_VERSION}"
-    else
+    if [ ! -f "${BIN_DIR}/bedrock_server" ]; then
         log_err "bedrock_server binary not found in the ZIP archive!"
         rm -rf "${EXTRACT_TMP}"
         exit 1
     fi
 
-    # Save installed version
+    chmod +x "${BIN_DIR}/bedrock_server"
+    mv "${BIN_DIR}/bedrock_server" "${BIN_DIR}/bedrock_server-${ZIP_VERSION}"
+    log_ok "Binary installed as: bedrock_server-${ZIP_VERSION}"
+
+    # Persist version to /data (survives container restarts)
     echo "${ZIP_VERSION}" > "${VERSION_FILE}"
 
-    # Cleanup
     rm -rf "${EXTRACT_TMP}"
-
     echo ""
     log_ok "Minecraft Bedrock Server ${ZIP_VERSION} installed successfully."
 fi
 
-# ─── Step 6: final instructions ──────────────────────────────────────────────
-
+# ─── Step 7: final instructions ───────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════════╗"
 echo "║                                                                      ║"

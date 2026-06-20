@@ -89,7 +89,8 @@ fi
 
 # ---------- Determine VERSION & binary path (installed at runtime via install-server.sh) ----------
 readonly BIN_DIR="/opt/bds"
-readonly VERSION_FILE="${BIN_DIR}/.installed-version"
+# VERSION_FILE is in /data (persistent volume) so it survives container restarts
+readonly VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
 : "${VERSION:=$(cat "${VERSION_FILE}" 2>/dev/null || true)}"
 BIN_PATH="${BIN_DIR}/bedrock_server-${VERSION}"
