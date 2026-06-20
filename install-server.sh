@@ -119,17 +119,77 @@ elif version_gt "${ZIP_VERSION}" "${INSTALLED_VERSION}"; then
     log "🔼 Upgrade available: ${INSTALLED_VERSION} → ${ZIP_VERSION}"
     INSTALL_ACTION="upgrade"
 elif version_gt "${INSTALLED_VERSION}" "${ZIP_VERSION}"; then
-    echo ""
-    echo "┌──────────────────────────────────────────────────────────────────────┐"
-    echo "│  ⬇️  Downgrade Detected — operation aborted.                          │"
-    echo "│                                                                        │"
-    printf  "│     Installed : %-55s│\n" "${INSTALLED_VERSION}"
-    printf  "│     Package   : %-55s│\n" "${ZIP_VERSION}"
-    echo "│                                                                        │"
-    echo "│  Downgrading may corrupt worlds. Remove the ZIP and restart.          │"
-    echo "└──────────────────────────────────────────────────────────────────────┘"
-    echo ""
-    exit 1
+    # ── Downgrade path ──────────────────────────────────────────────────────
+    case "${ALLOW_DOWNGRADE,,}" in
+        true|1|yes|on)
+            echo ""
+            echo "╔══════════════════════════════════════════════════════════════════════╗"
+            echo "║                                                                      ║"
+            echo "║   ⚠️⚠️⚠️  D O W N G R A D E   W A R N I N G  ⚠️⚠️⚠️                    ║"
+            echo "║                                                                      ║"
+            echo "║   YOU ARE ABOUT TO DOWNGRADE THE MINECRAFT BEDROCK SERVER!          ║"
+            echo "║                                                                      ║"
+            printf  "║   Current version  :  %-47s║\n" "${INSTALLED_VERSION}"
+            printf  "║   Target version   :  %-47s║\n" "${ZIP_VERSION}"
+            echo "║                                                                      ║"
+            echo "║   ⛔  ALL SERVER DATA AND WORLDS WILL BE PERMANENTLY DELETED!       ║"
+            echo "║       This action cannot be undone.                                  ║"
+            echo "║                                                                      ║"
+            echo "║   To CANCEL: stop the add-on within the next 10 seconds.            ║"
+            echo "║                                                                      ║"
+            echo "╚══════════════════════════════════════════════════════════════════════╝"
+            echo ""
+
+            for i in 10 9 8 7 6 5 4 3 2 1; do
+                echo "  ⏳  Downgrade starts in ${i} second(s) — stop the add-on now to cancel..."
+                sleep 1
+            done
+
+            echo ""
+            echo "  🗑️  Countdown complete. Beginning downgrade procedure..."
+            echo ""
+
+            # ── Wipe /data/bds (installed binary + libs) ────────────────────
+            log "🗑️  Removing installed server binary directory: ${BIN_DIR}"
+            rm -rf "${BIN_DIR}"
+            mkdir -p "${BIN_DIR}"
+            chmod 0755 "${BIN_DIR}"
+            log_ok "Binary directory wiped and recreated."
+
+            # ── Wipe /data contents EXCEPT bedrock-server-software and the
+            #    directory itself; keep /config/bedrock-server-software intact ─
+            log "🗑️  Wiping server data in ${DATA_DIR} ..."
+            find "${DATA_DIR}" -mindepth 1 -maxdepth 1 \
+                ! -name "bds" \
+                -exec rm -rf {} + 2>/dev/null || true
+            log_ok "Server data wiped."
+
+            # ── Clear version file ──────────────────────────────────────────
+            rm -f "${VERSION_FILE}"
+            INSTALLED_VERSION=""
+
+            echo ""
+            echo "  ✅  All server data removed. Proceeding with installation of ${ZIP_VERSION}..."
+            echo ""
+
+            INSTALL_ACTION="install"
+            ;;
+        *)
+            echo ""
+            echo "┌──────────────────────────────────────────────────────────────────────┐"
+            echo "│  ⬇️  Downgrade Detected — operation aborted.                          │"
+            echo "│                                                                        │"
+            printf  "│     Installed : %-55s│\n" "${INSTALLED_VERSION}"
+            printf  "│     Package   : %-55s│\n" "${ZIP_VERSION}"
+            echo "│                                                                        │"
+            echo "│  Downgrading may corrupt worlds. To allow downgrade, enable:          │"
+            echo "│     ➜  Allow Downgrade: true   (in add-on Configuration)             │"
+            echo "│  WARNING: enabling downgrade will delete all worlds and data!         │"
+            echo "└──────────────────────────────────────────────────────────────────────┘"
+            echo ""
+            exit 1
+            ;;
+    esac
 else
     echo ""
     echo "┌──────────────────────────────────────────────────────────────────────┐"

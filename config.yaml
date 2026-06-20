@@ -19,5 +19,7 @@ map:
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
   install_upgrade_server: bool?
+  allow_downgrade: bool?
 options:
   install_upgrade_server: true
+  allow_downgrade: false

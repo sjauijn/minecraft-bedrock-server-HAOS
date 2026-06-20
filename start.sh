@@ -17,6 +17,40 @@ get_option() {
 }
 
 INSTALL_UPGRADE_MODE="$(get_option 'install_upgrade_server')"
+ALLOW_DOWNGRADE="$(get_option 'allow_downgrade')"
+
+# ─── Guard: allow_downgrade=true requires install_upgrade_server=true ─────────
+case "${ALLOW_DOWNGRADE,,}" in
+    true|1|yes|on)
+        case "${INSTALL_UPGRADE_MODE,,}" in
+            true|1|yes|on)
+                # OK — downgrade mode handled inside install-server.sh
+                ;;
+            *)
+                echo ""
+                echo "╔══════════════════════════════════════════════════════════════════════╗"
+                echo "║                                                                      ║"
+                echo "║   🚫  CONFIGURATION ERROR — ADD-ON WILL NOT START                   ║"
+                echo "║                                                                      ║"
+                echo "║   'Allow Downgrade' is set to  true  but                            ║"
+                echo "║   'Installing/Upgrading Server' is set to  false.                  ║"
+                echo "║                                                                      ║"
+                echo "║   Running the server with 'Allow Downgrade' enabled is dangerous.  ║"
+                echo "║   Please disable it first:                                          ║"
+                echo "║                                                                      ║"
+                echo "║     ➜  In the add-on Configuration, set                            ║"
+                echo "║        ┌──────────────────────┐                                     ║"
+                echo "║        │  Allow Downgrade: false  │                                 ║"
+                echo "║        └──────────────────────┘                                     ║"
+                echo "║     ➜  Restart the add-on.                                          ║"
+                echo "║                                                                      ║"
+                echo "╚══════════════════════════════════════════════════════════════════════╝"
+                echo ""
+                tail -f /dev/null
+                ;;
+        esac
+        ;;
+esac
 
 # ─── Install / Upgrade mode ───────────────────────────────────────────────────
 case "${INSTALL_UPGRADE_MODE,,}" in
@@ -29,7 +63,7 @@ case "${INSTALL_UPGRADE_MODE,,}" in
         echo "  The add-on is running in software installation / upgrade mode."
         echo "  The Minecraft Bedrock Server will NOT be started in this mode."
         echo ""
-        exec /opt/install-server.sh
+        exec env ALLOW_DOWNGRADE="${ALLOW_DOWNGRADE}" /opt/install-server.sh
         ;;
 esac
 
