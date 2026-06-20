@@ -7,7 +7,6 @@ OPTIONS_FILE="${DATA_DIR}/options.json"
 STOP_MARKER="${DATA_DIR}/run/bedrock_server.stopped"
 VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
-# ─── Install/Upgrade mode: always healthy (only logs are shown) ────────────────
 get_option() {
     local key="$1"
     if [ -f "${OPTIONS_FILE}" ]; then
@@ -22,12 +21,10 @@ case "${INSTALL_UPGRADE_MODE,,}" in
         ;;
 esac
 
-# ─── No software installed: report healthy so HA doesn't kill the add-on ─────
 if [ ! -f "${VERSION_FILE}" ]; then
     exit 0
 fi
 
-# ─── EULA not accepted: UI-only mode is acceptable ────────────────────────────
 eula="false"
 if [ -f "$CONFIG_FILE" ]; then
     eula="$(jq -r '.general.eula // false' "$CONFIG_FILE" 2>/dev/null || echo "false")"
@@ -44,7 +41,6 @@ case "${eula,,}" in
         ;;
 esac
 
-# ─── EULA accepted: Bedrock must be running ───────────────────────────────────
 timeout 3s /usr/local/bin/mc-monitor status-bedrock \
     --host 127.0.0.1 \
     --port "${SERVER_PORT:-19132}" >/dev/null 2>&1 || exit 1
