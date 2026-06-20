@@ -2,6 +2,7 @@
 set -eo pipefail
 
 DATA_DIR="${DATA_DIR:-/data}"
+
 # addon_config:rw mounts the addon config dir.
 # Inside the container it is accessible at /homeassistant/addon_configs/<slug>/
 # but HA also creates a symlink /config -> that directory.
@@ -10,14 +11,14 @@ readonly CONFIG_DIR="/config"
 WORLDS_DIR="${CONFIG_DIR}/worlds"
 
 # =========================
-#  Bedrock Server entry door Kevin Hekert
-#  - Applies server.properties via set-property (thanks to itzg!)
-#  - Builds permissions/allowlist (from options + env fallbacks)
-#  - Starts pre-bundled binary at /opt/bds/bedrock_server-${VERSION}
+# Bedrock Server entry door Kevin Hekert
+# - Resolves requested Minecraft version (latest/preview/pinned) and downloads it at runtime
+# - Applies server.properties via set-property (thanks to itzg!)
+# - Builds permissions/allowlist (from options + env fallbacks)
+# - Starts the resolved binary at /opt/bds/bedrock_server-${VERSION}
 # =========================
 
 #(Re)set symlinks (blijft niet altijd bewaard vanuit Dockerfile build)
-
 LINKS=(
   "/opt/bds/worlds:${WORLDS_DIR}"
   "/opt/bds/server.properties:${DATA_DIR}/server.properties"
@@ -26,14 +27,12 @@ LINKS=(
 )
 
 echo "🔗 Checking Bedrock symlinks..."
-
 for entry in "${LINKS[@]}"; do
   target="${entry%%:*}"
   source="${entry##*:}"
   ln -sfn "$source" "$target"
   echo "  - $target → $source"
 done
-
 echo "✨ Symlink check and update complete..."
 
 # --- Ensure worlds dir exists in addon_configs ---
@@ -49,7 +48,6 @@ if [ ! -d "${WORLDS_DIR}" ]; then
   mkdir -p "${WORLDS_DIR}"
   chmod 0777 "${WORLDS_DIR}"
 fi
-
 
 # ---------- helpers ----------
 isTrue() { case "${1,,}" in true|on|1|yes) return 0 ;; *) return 1 ;; esac; }
@@ -76,37 +74,183 @@ if [[ ${DEBUG^^} = TRUE ]]; then
   set -x
   debug_dir_listing="$(ls -ld "${DATA_DIR}")"
   echo "DEBUG: running as $(id -a) with ${debug_dir_listing}"
-  echo "       cwd=$(pwd)"
+  echo "  cwd=$(pwd)"
 fi
 
-# ---------- Determine VERSION & binary path (pre-baked at build time) ----------
-: "${VERSION:=$(cat /etc/bds-version 2>/dev/null || true)}"
+# ==========================================================================
+# ---------- Determine requested Minecraft Game Version (NEW LOGIC) -------
+# ==========================================================================
+# Priority: explicit env MC_VERSION/VERSION > UI option general.mc_version
+# (nested) > flat fallback option > "latest"
+RAW_MC_VERSION="$(first_nonempty \
+  "${MC_VERSION:-}" \
+  "${VERSION:-}" \
+  "$(optn '.general.mc_version')" \
+  "$(optf 'mc_version')" \
+  "latest")"
+
+# Normalize: trim whitespace, allow user to leave field blank meaning "latest"
+RAW_MC_VERSION="$(echo "$RAW_MC_VERSION" | xargs 2>/dev/null || echo "$RAW_MC_VERSION")"
+[[ -z "$RAW_MC_VERSION" ]] && RAW_MC_VERSION="latest"
+
+case "${RAW_MC_VERSION,,}" in
+  latest)
+    VERSION="LATEST"
+    ;;
+  preview)
+    VERSION="PREVIEW"
+    PREVIEW="true"
+    ;;
+  *)
+    # Specific pinned version, e.g. "1.26.21" or "1.26.21.1"
+    VERSION="${RAW_MC_VERSION}"
+    ;;
+esac
+
+export VERSION
+export PREVIEW="${PREVIEW:-false}"
+
 BIN_DIR="/opt/bds"
-BIN_PATH="${BIN_DIR}/bedrock_server-${VERSION}"
+mkdir -p "${BIN_DIR}"
 
-if [[ -z "$VERSION" ]]; then
-  echo "ERROR: VERSION is empty and /etc/bds-version not found. This image expects a pre-bundled Bedrock binary."
+# ---------- Resolve "LATEST"/"PREVIEW" to a concrete version + download URL ----------
+# Mirrors itzg/docker-minecraft-bedrock-server's resolution logic against
+# minecraft.net's official download page, since Mojang doesn't host a JSON API.
+BDS_DOWNLOAD_PAGE="https://www.minecraft.net/en-us/download/server/bedrock"
+
+resolve_latest_url() {
+  local want_preview="$1"
+  local html url
+  html="$(curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+    -A "Mozilla/5.0 (itzg/minecraft-bedrock-server compatible HAOS add-on)" \
+    "${BDS_DOWNLOAD_PAGE}" || true)"
+
+  if [[ "$want_preview" == "true" ]]; then
+    url="$(echo "$html" | grep -oE 'https://[a-zA-Z0-9./_-]*bedrock-server-[0-9.]*\.zip' | grep -i preview | head -n1)"
+  else
+    url="$(echo "$html" | grep -oE 'https://[a-zA-Z0-9./_-]*bedrock-server-[0-9.]*\.zip' | grep -iv preview | head -n1)"
+  fi
+  echo "$url"
+}
+
+DOWNLOAD_URL=""
+RESOLVED_VERSION=""
+
+if [[ -n "${DIRECT_DOWNLOAD_URL:-}" ]]; then
+  DOWNLOAD_URL="${DIRECT_DOWNLOAD_URL}"
+  RESOLVED_VERSION="$(echo "$DOWNLOAD_URL" | grep -oE '[0-9]+(\.[0-9]+){2,3}' | head -n1)"
+elif [[ "$VERSION" == "LATEST" || "$VERSION" == "PREVIEW" ]]; then
+  echo "🔎 Resolving ${VERSION} Bedrock server version from minecraft.net..."
+  DOWNLOAD_URL="$(resolve_latest_url "$( [[ "$VERSION" == "PREVIEW" ]] && echo true || echo false )")"
+  if [[ -z "$DOWNLOAD_URL" ]]; then
+    echo "ERROR: Could not resolve ${VERSION} download URL from ${BDS_DOWNLOAD_PAGE}."
+    echo "       You can pin DIRECT_DOWNLOAD_URL to a bedrock-server-VERSION.zip as a workaround,"
+    echo "       or set 'Minecraft Game Version' to a specific known version (e.g. 1.21.50.10)."
+    exit 2
+  fi
+  RESOLVED_VERSION="$(echo "$DOWNLOAD_URL" | grep -oE '[0-9]+(\.[0-9]+){2,3}' | head -n1)"
+else
+  # Specific pinned version requested, e.g. "1.21.50.10"
+  RESOLVED_VERSION="$VERSION"
+  ARCH_SUFFIX="bin-linux"
+  if [[ "${PREVIEW,,}" == "true" ]]; then
+    ARCH_SUFFIX="bin-linux-preview"
+  fi
+  DOWNLOAD_URL="https://www.minecraft.net/bedrockdedicatedserver/${ARCH_SUFFIX}/bedrock-server-${RESOLVED_VERSION}.zip"
+fi
+
+if [[ -z "$RESOLVED_VERSION" ]]; then
+  echo "ERROR: Failed to determine resolved Bedrock version string."
   exit 2
 fi
+
+echo "🧱 Requested version setting : ${RAW_MC_VERSION}"
+echo "🧱 Resolved Bedrock version  : ${RESOLVED_VERSION}"
+echo "🌐 Download URL              : ${DOWNLOAD_URL}"
+
+BIN_PATH="${BIN_DIR}/bedrock_server-${RESOLVED_VERSION}"
+
+# ---------- Download/install only if this exact version isn't already cached ----------
+if [[ -x "$BIN_PATH" ]]; then
+  echo "✅ Bedrock server ${RESOLVED_VERSION} already present in ${BIN_DIR}, skipping download."
+else
+  echo "📦 Downloading Bedrock server ${RESOLVED_VERSION}..."
+  TMP_ZIP="$(mktemp /tmp/bedrock-XXXXXX.zip)"
+  if ! curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors --http1.1 \
+      -A "itzg/minecraft-bedrock-server" -o "$TMP_ZIP" "$DOWNLOAD_URL"; then
+    rm -f "$TMP_ZIP"
+    echo "ERROR: Failed to download Bedrock server from ${DOWNLOAD_URL}"
+    echo "       Check 'Minecraft Game Version' in the add-on configuration."
+    exit 2
+  fi
+
+  TMP_EXTRACT="$(mktemp -d /tmp/bedrock-extract-XXXXXX)"
+  unzip -q "$TMP_ZIP" -d "$TMP_EXTRACT"
+  rm -f "$TMP_ZIP"
+
+  if [[ ! -f "${TMP_EXTRACT}/bedrock_server" ]]; then
+    echo "ERROR: Downloaded archive did not contain a bedrock_server executable."
+    rm -rf "$TMP_EXTRACT"
+    exit 2
+  fi
+
+  # Preserve any existing worlds/permissions/allowlist/server.properties already
+  # symlinked away from /opt/bds, then sync in everything else (libs, resource_packs
+  # skeleton, etc.) for this version, without clobbering the symlinked paths.
+  shopt -s dotglob
+  for item in "${TMP_EXTRACT}"/*; do
+    base="$(basename "$item")"
+    case "$base" in
+      worlds|server.properties|allowlist.json|permissions.json)
+        continue
+        ;;
+      bedrock_server)
+        cp -f "$item" "${BIN_PATH}"
+        ;;
+      *)
+        rm -rf "${BIN_DIR}/${base}"
+        cp -rf "$item" "${BIN_DIR}/${base}"
+        ;;
+    esac
+  done
+  shopt -u dotglob
+  rm -rf "$TMP_EXTRACT"
+
+  chmod +x "$BIN_PATH"
+  echo "${RESOLVED_VERSION}" > /etc/bds-version
+  echo "✅ Bedrock server ${RESOLVED_VERSION} installed at ${BIN_PATH}"
+fi
+
+# Optional cleanup: keep only the currently selected version's binary to save space,
+# unless KEEP_OLD_VERSIONS is set to true.
+if [[ "${KEEP_OLD_VERSIONS:-false}" != "true" ]]; then
+  find "${BIN_DIR}" -maxdepth 1 -name 'bedrock_server-*' ! -name "bedrock_server-${RESOLVED_VERSION}" -exec rm -f {} \;
+fi
+
 if [[ ! -x "$BIN_PATH" ]]; then
-  echo "ERROR: Binary not found: $BIN_PATH"
-  echo "       Ensure the image baked the server as /opt/bds/bedrock_server-${VERSION}"
+  echo "ERROR: Binary not found after install: $BIN_PATH"
   exit 2
 fi
+
+VERSION="$RESOLVED_VERSION"
+export VERSION
+
+# ---------- (Re)apply data-dir symlinks now that /opt/bds has been refreshed ----------
+for entry in "${LINKS[@]}"; do
+  target="${entry%%:*}"
+  source="${entry##*:}"
+  ln -sfn "$source" "$target"
+done
 
 # ---------- allow list ----------
 allowListUsers="${ALLOW_LIST_USERS:-}"
-
 if [ -n "$allowListUsers" ]; then
   echo "Setting allowlist.json from \$ALLOW_LIST_USERS"
-
   rm -f allowlist.json
   jq -n --arg users "$allowListUsers" \
     '$users | split(",") | map({ "name": . })' > allowlist.json
-
   export ALLOW_LIST=true
 fi
-
 
 # ---------- options → ENV (nested with flat fallbacks) ----------
 # GENERAL
@@ -117,7 +261,6 @@ export ONLINE_MODE="$(lower_bool "${ONLINE_MODE:-$(first_nonempty "$(optn '.gene
 export EMIT_SERVER_TELEMETRY="$(lower_bool "${EMIT_SERVER_TELEMETRY:-$(first_nonempty "$(optn '.general.emit_server_telemetry')" "$(optf 'emit_server_telemetry')")}")"
 export ENABLE_LAN_VISIBILITY="$(lower_bool "${ENABLE_LAN_VISIBILITY:-$(first_nonempty "$(optn '.general.enable_lan_visibility')" "$(optf 'enable_lan_visibility')")}")"
 export EULA="$(lower_bool "${EULA:-$(first_nonempty "$(optn '.general.eula')" "$(optf 'eula')")}")"
-
 
 # WORLD
 export LEVEL_NAME="${LEVEL_NAME:-$(first_nonempty "$(optn '.world.level_name')" "$(optf 'level_name')")}"
@@ -139,7 +282,6 @@ if [[ -n "$WORLD_SEED" ]]; then
 else
   export LEVEL_SEED="${LEVEL_SEED:-$(first_nonempty "$(optn '.world.level_seed')" "$(optf 'level_seed')")}"
 fi
-
 export LEVEL_TYPE="${LEVEL_TYPE:-$(first_nonempty "$(optn '.world.level_type')" "$(optf 'level_type')")}"
 export GAMEMODE="${GAMEMODE:-$(first_nonempty "$(optn '.world.gamemode')" "$(optf 'gamemode')")}"
 export DIFFICULTY="${DIFFICULTY:-$(first_nonempty "$(optn '.world.difficulty')" "$(optf 'difficulty')")}"
@@ -191,7 +333,7 @@ sync_permissions_and_config() {
   perm_json="$(jq -c '
     ( . // [] ) |
     map({
-      xuid:       (.xuid       | tostring),
+      xuid: (.xuid | tostring),
       permission: (.permission | tostring)
     })
   ' "$PERM_FILE" 2>/dev/null || echo '[]')"
@@ -200,7 +342,7 @@ sync_permissions_and_config() {
   local new_perm_json
   new_perm_json="$(jq -c --argjson cfg "$cfg_ra_json" --argjson perms "$perm_json" '
     ($perms // []) as $perms
-    | ($cfg   // []) as $cfg
+    | ($cfg // []) as $cfg
     | reduce $cfg[] as $c ($perms;
         if any(.xuid == $c.xuid) then
           map(if .xuid == $c.xuid then .permission = $c.role else . end)
@@ -211,17 +353,16 @@ sync_permissions_and_config() {
   ' <<< '{}')"
 
   echo "${new_perm_json:-[]}" > "$PERM_FILE"
+
   # 4) permissions ➜ config (altijd terugschrijven naar config)
   local final_perm_json
   final_perm_json="$(cat "$PERM_FILE")"
-
   local tmp_cfg
   tmp_cfg="$(mktemp)"
-
   jq --argjson perms "$final_perm_json" '
     .players.role_assignments = (
       $perms | map({
-        xuid: ( .xuid       | tostring ),
+        xuid: ( .xuid | tostring ),
         role: ( .permission | tostring )
       })
     )
@@ -230,10 +371,8 @@ sync_permissions_and_config() {
   echo "✅ Synced permissions.json ↔ config.players.role_assignments"
 }
 
-
 # ---------- Bidirectionele sync: config <-> permissions.json ----------
-
-PERM_FILE="${DATA_DIR}/permissions.json"   # Zie ook symlinks
+PERM_FILE="${DATA_DIR}/permissions.json" # Zie ook symlinks
 
 # Safe lees helpers: geef altijd geldige JSON terug
 config_ra_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
@@ -243,51 +382,45 @@ merged_json="$(
   jq -c '
     def norm_level(r):
       (r|tostring|ascii_downcase) as $r
-      | if   $r == "operator" or $r == "op"    then 3
-        elif $r == "member"  or $r == "default" then 2
+      | if $r == "operator" or $r == "op" then 3
+        elif $r == "member" or $r == "default" then 2
         else 1
         end;
-
     def level_to_role(n):
-      if   n >= 3 then "operator"
+      if n >= 3 then "operator"
       elif n >= 2 then "member"
       else "visitor"
       end;
-
     # config: [{xuid, role, name?}]
     def cfg_pairs(list):
       [ list[]? | {
           xuid: (.xuid|tostring),
-          lvl:  norm_level(.role),
+          lvl: norm_level(.role),
           name: (.name // null)
         } ];
-
     # perms: [{xuid, permission}] – geen name
     def perm_pairs(list):
       [ list[]? | {
           xuid: (.xuid|tostring),
-          lvl:  norm_level(.permission),
+          lvl: norm_level(.permission),
           name: null
         } ];
-
     . as $in
-    | ($in.config_ra // [])  as $cfg_list
-    | ($in.perms     // [])  as $perm_list
-
+    | ($in.config_ra // []) as $cfg_list
+    | ($in.perms // []) as $perm_list
     | (cfg_pairs($cfg_list) + perm_pairs($perm_list))
-      | group_by(.xuid)
-      | map({
-          xuid: .[0].xuid,
-          lvl:  ( map(.lvl) | max ),
-          # neem naam uit config als die bestaat
-          name: (
-            [.[].name // empty]
-            | map(select(. != "" and . != "null"))
-            | first? // null
-          )
-        })
-      as $merged
-
+    | group_by(.xuid)
+    | map({
+        xuid: .[0].xuid,
+        lvl: ( map(.lvl) | max ),
+        # neem naam uit config als die bestaat
+        name: (
+          [.[].name // empty]
+          | map(select(. != "" and . != "null"))
+          | first? // null
+        )
+      })
+    as $merged
     | {
         # Voor config: xuid + role + optioneel name
         merged_for_config: (
@@ -322,6 +455,7 @@ jq --argjson ra "$cfg_out" '
 # 2) Schrijf terug naar permissions.json
 tmp_perm="$(mktemp)"
 echo "$perms_out" | jq '.' > "$tmp_perm" && mv "$tmp_perm" "$PERM_FILE"
+
 echo "✅ Bidirectionele sync voltooid."
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
@@ -335,8 +469,8 @@ env_to_items() {
 tmp="$(mktemp)"
 {
   jq -c '.[] | {"xuid": (.xuid|tostring), "role": (.role|tostring)}' <<< "$assignments_json"
-  env_to_items "${OPS}"      "operator"
-  env_to_items "${MEMBERS}"  "member"
+  env_to_items "${OPS}" "operator"
+  env_to_items "${MEMBERS}" "member"
   env_to_items "${VISITORS}" "visitor"
 } | jq -s '
   map(.role |= ( . as $r |
@@ -350,7 +484,6 @@ echo "✅ permissions.json generated"
 
 # ---------- Build allowlist.json vanuit config.players.role_assignments ----------
 ALLOWLIST_FILE="${DATA_DIR}/allowlist.json"
-
 if [[ -f "$OPT_FILE" ]]; then
   tmp_allow="$(mktemp)"
   jq -c '
@@ -360,18 +493,14 @@ if [[ -f "$OPT_FILE" ]]; then
       xuid: ( .xuid | tostring )
     })
   ' "$OPT_FILE" > "$tmp_allow" && mv "$tmp_allow" "$ALLOWLIST_FILE"
-
   echo "✅ allowlist.json regenerated from config.players.role_assignments"
 else
   echo "⚠️ $OPT_FILE not found, skipping allowlist.json generation"
 fi
 
-
-
 # ---------- Apply server.properties from ENV via definitions ----------
 PROP_FILE="${DATA_DIR}/server.properties"
 touch "$PROP_FILE"
-
 if [ -f /etc/bds-property-definitions.json ]; then
   set-property --file "$PROP_FILE" --bulk /etc/bds-property-definitions.json
 else
@@ -380,8 +509,8 @@ fi
 
 # ---------- Log world configuration ----------
 echo "🌍 World Configuration:"
-echo "   - Name: ${LEVEL_NAME:-<not set>}"
-echo "   - Seed: ${LEVEL_SEED:-<not set>}"
+echo "  - Name: ${LEVEL_NAME:-<not set>}"
+echo "  - Seed: ${LEVEL_SEED:-<not set>}"
 echo "-------------------------------------------"
 
 # ---------- Pre-start info ----------
@@ -406,11 +535,9 @@ if [[ ${EULA^^} != TRUE ]]; then
   tail -f /dev/null
 fi
 
-
 # ---------- Start ----------
 export LD_LIBRARY_PATH="${BIN_DIR}"
 echo Library path: ${LD_LIBRARY_PATH:-"(not set)"}
-
 echo "🚀 Starting Bedrock ${VERSION}"
 
 # Filter extremely noisy Bedrock AI warnings (attack_interval disabled -> scan_interval)
@@ -420,24 +547,20 @@ LOG_NOISE_PATTERN="${BEDROCK_LOG_NOISE_PATTERN:-attack_interval.*scan_interval}"
 
 has_stdbuf_support() {
   command -v stdbuf >/dev/null 2>&1 || return 1
-
   local candidates=(
     "/usr/lib/coreutils/libstdbuf.so"
     "/usr/libexec/coreutils/libstdbuf.so"
     "/usr/lib/x86_64-linux-gnu/coreutils/libstdbuf.so"
     "/usr/lib/aarch64-linux-gnu/coreutils/libstdbuf.so"
   )
-
   for lib in "${candidates[@]}"; do
     [[ -f "$lib" ]] && return 0
   done
-
   return 1
 }
 
 run_bedrock() {
   local cmd=("$@")
-
   if [[ "${SUPPRESS_NOISY_BEDROCK_LOGS,,}" != "false" ]]; then
     if has_stdbuf_support; then
       exec "${cmd[@]}" \
