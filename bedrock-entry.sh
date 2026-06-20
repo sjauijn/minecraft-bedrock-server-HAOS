@@ -2,23 +2,10 @@
 set -eo pipefail
 
 DATA_DIR="${DATA_DIR:-/data}"
-# addon_config:rw mounts the addon config dir.
-# Inside the container it is accessible at /homeassistant/addon_configs/<slug>/
-# but HA also creates a symlink /config -> that directory.
-# We use /config as the canonical path.
+
 readonly CONFIG_DIR="/config"
 WORLDS_DIR="${CONFIG_DIR}/worlds"
 
-# =========================
-#  Bedrock Server entry door Kevin Hekert
-#  - Applies server.properties via set-property (thanks to itzg!)
-#  - Builds permissions/allowlist (from options + env fallbacks)
-#  - Starts runtime-installed binary at /data/bds/bedrock_server-${VERSION}
-# =========================
-
-#(Re)set symlinks — /data/bds must exist before we create symlinks inside it
-
-# --- Ensure /data/bds exists (persistent binary directory) ---
 if [ ! -d "${DATA_DIR}/bds" ]; then
   mkdir -p "${DATA_DIR}/bds"
   chmod 0755 "${DATA_DIR}/bds"
@@ -42,8 +29,6 @@ done
 
 echo "✨ Symlink check and update complete..."
 
-# --- Ensure worlds dir exists in addon_configs ---
-# Migration: move worlds from old /data/worlds to new /config/worlds on first start
 if [ -d "${DATA_DIR}/worlds" ] && [ ! -L "${DATA_DIR}/worlds" ] && [ ! -d "${WORLDS_DIR}" ]; then
   echo "🔄 Migrating worlds from ${DATA_DIR}/worlds to ${WORLDS_DIR}..."
   mv "${DATA_DIR}/worlds" "${WORLDS_DIR}"
@@ -56,14 +41,12 @@ if [ ! -d "${WORLDS_DIR}" ]; then
   chmod 0777 "${WORLDS_DIR}"
 fi
 
-# --- Ensure bedrock-server-software dir exists in addon_configs ---
 readonly SOFTWARE_DIR="${CONFIG_DIR}/bedrock-server-software"
 if [ ! -d "${SOFTWARE_DIR}" ]; then
   mkdir -p "${SOFTWARE_DIR}"
   chmod 0777 "${SOFTWARE_DIR}"
 fi
 
-# ---------- helpers ----------
 isTrue() { case "${1,,}" in true|on|1|yes) return 0 ;; *) return 1 ;; esac; }
 lower_bool() { case "${1,,}" in true|1|on|yes) echo "true" ;; *) echo "false" ;; esac; }
 
@@ -83,7 +66,6 @@ jq_safe_array_file() {
   fi
 }
 
-# ---------- debug ----------
 if [[ ${DEBUG^^} = TRUE ]]; then
   set -x
   debug_dir_listing="$(ls -ld "${DATA_DIR}")"
@@ -91,10 +73,8 @@ if [[ ${DEBUG^^} = TRUE ]]; then
   echo "       cwd=$(pwd)"
 fi
 
-# ---------- Determine VERSION & binary path (installed at runtime via install-server.sh) ----------
-# BIN_DIR is in /data (persistent volume) — survives container restarts and image rebuilds.
 readonly BIN_DIR="${DATA_DIR}/bds"
-# VERSION_FILE is in /data (persistent volume) so it survives container restarts
+
 readonly VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
 : "${VERSION:=$(cat "${VERSION_FILE}" 2>/dev/null || true)}"
@@ -103,16 +83,16 @@ BIN_PATH="${BIN_DIR}/bedrock_server-${VERSION}"
 if [[ -z "$VERSION" ]]; then
   echo ""
   echo "╔══════════════════════════════════════════════════════════════════════╗"
-  echo "║  ❌  Minecraft Bedrock Server software is not installed.             ║"
-  echo "║                                                                      ║"
+  echo "║  ❌  Minecraft Bedrock Server software is not installed.            ║"
+  echo "║                                                                     ║"
   echo "║  Please set  Installing/Upgrading Server = true  in the add-on      ║"
   echo "║  Configuration and restart the add-on to install the software.      ║"
-  echo "║                                                                      ║"
+  echo "║                                                                     ║"
   echo "║  Download the Bedrock Dedicated Server from:                        ║"
   echo "║     👉  https://www.minecraft.net/download/server/bedrock           ║"
-  echo "║                                                                      ║"
+  echo "║                                                                     ║"
   echo "║  Then upload the ZIP to:                                            ║"
-  echo "║     📂  addon_configs/<this-addon>/bedrock-server-software/         ║"
+  echo "║     📂  addon_configs/<this-addon>/bedrock-server-software/        ║"
   echo "╚══════════════════════════════════════════════════════════════════════╝"
   echo ""
   exit 2
@@ -130,7 +110,6 @@ if [[ ! -x "$BIN_PATH" ]]; then
   exit 2
 fi
 
-# ---------- allow list ----------
 allowListUsers="${ALLOW_LIST_USERS:-}"
 
 if [ -n "$allowListUsers" ]; then
@@ -143,9 +122,6 @@ if [ -n "$allowListUsers" ]; then
   export ALLOW_LIST=true
 fi
 
-
-# ---------- options → ENV (nested with flat fallbacks) ----------
-# GENERAL
 export SERVER_NAME="${SERVER_NAME:-$(first_nonempty "$(optn '.general.server_name')" "$(optf 'server_name')")}"
 export SERVER_PORT="${SERVER_PORT:-$(first_nonempty "$(optn '.general.server_port')" "$(optf 'server_port')")}"
 export SERVER_PORT_V6="${SERVER_PORT_V6:-$(first_nonempty "$(optn '.general.server_port_v6')" "$(optf 'server_port_v6')")}"
@@ -154,11 +130,8 @@ export EMIT_SERVER_TELEMETRY="$(lower_bool "${EMIT_SERVER_TELEMETRY:-$(first_non
 export ENABLE_LAN_VISIBILITY="$(lower_bool "${ENABLE_LAN_VISIBILITY:-$(first_nonempty "$(optn '.general.enable_lan_visibility')" "$(optf 'enable_lan_visibility')")}")"
 export EULA="$(lower_bool "${EULA:-$(first_nonempty "$(optn '.general.eula')" "$(optf 'eula')")}")"
 
-
-# WORLD
 export LEVEL_NAME="${LEVEL_NAME:-$(first_nonempty "$(optn '.world.level_name')" "$(optf 'level_name')")}"
 
-# Check world-specific seed from data/worldconfiguration.json
 WORLD_CONFIG_FILE="${DATA_DIR}/worldconfiguration.json"
 WORLD_SEED=""
 if [[ -f "$WORLD_CONFIG_FILE" ]] && [[ -n "$LEVEL_NAME" ]]; then
@@ -168,7 +141,6 @@ if [[ -f "$WORLD_CONFIG_FILE" ]] && [[ -n "$LEVEL_NAME" ]]; then
   fi
 fi
 
-# Use world-specific seed if available, otherwise fall back to config
 if [[ -n "$WORLD_SEED" ]]; then
   export LEVEL_SEED="$WORLD_SEED"
   echo "🌍 Using world-specific seed for '$LEVEL_NAME': $LEVEL_SEED"
@@ -181,20 +153,17 @@ export GAMEMODE="${GAMEMODE:-$(first_nonempty "$(optn '.world.gamemode')" "$(opt
 export DIFFICULTY="${DIFFICULTY:-$(first_nonempty "$(optn '.world.difficulty')" "$(optf 'difficulty')")}"
 export ALLOW_CHEATS="$(lower_bool "${ALLOW_CHEATS:-$(first_nonempty "$(optn '.world.allow_cheats')" "$(optf 'allow_cheats')")}")"
 
-# PLAYERS
 export MAX_PLAYERS="${MAX_PLAYERS:-$(first_nonempty "$(optn '.players.max_players')" "$(optf 'max_players')")}"
 export ALLOW_LIST="$(lower_bool "${ALLOW_LIST:-$(first_nonempty "$(optn '.players.allow_list')" "$(optf 'allow_list')")}")"
 export DEFAULT_PLAYER_PERMISSION_LEVEL="${DEFAULT_PLAYER_PERMISSION_LEVEL:-$(first_nonempty "$(optn '.players.default_player_permission_level')" "$(optf 'default_player_permission_level')")}"
 export TEXTUREPACK_REQUIRED="$(lower_bool "${TEXTUREPACK_REQUIRED:-$(first_nonempty "$(optn '.players.texturepack_required')" "$(optf 'texturepack_required')")}")"
 
-# PERFORMANCE
 export VIEW_DISTANCE="${VIEW_DISTANCE:-$(first_nonempty "$(optn '.performance.view_distance')" "$(optf 'view_distance')")}"
 export TICK_DISTANCE="${TICK_DISTANCE:-$(first_nonempty "$(optn '.performance.tick_distance')" "$(optf 'tick_distance')")}"
 export PLAYER_IDLE_TIMEOUT="${PLAYER_IDLE_TIMEOUT:-$(first_nonempty "$(optn '.performance.player_idle_timeout')" "$(optf 'player_idle_timeout')")}"
 export MAX_THREADS="${MAX_THREADS:-$(first_nonempty "$(optn '.performance.max_threads')" "$(optf 'max_threads')")}"
 export COMPRESSION_THRESHOLD="${COMPRESSION_THRESHOLD:-$(first_nonempty "$(optn '.performance.compression_threshold')" "$(optf 'compression_threshold')")}"
 
-# ANTI_CHEAT
 export SERVER_AUTHORITATIVE_MOVEMENT="${SERVER_AUTHORITATIVE_MOVEMENT:-$(first_nonempty "$(optn '.anti_cheat.server_authoritative_movement')" "$(optf 'server_authoritative_movement')")}"
 export SERVER_AUTHORITATIVE_BLOCK_BREAKING="$(lower_bool "${SERVER_AUTHORITATIVE_BLOCK_BREAKING:-$(first_nonempty "$(optn '.anti_cheat.server_authoritative_block_breaking')" "$(optf 'server_authoritative_block_breaking')")}")"
 export PLAYER_MOVEMENT_SCORE_THRESHOLD="${PLAYER_MOVEMENT_SCORE_THRESHOLD:-$(first_nonempty "$(optn '.anti_cheat.player_movement_score_threshold')" "$(optf 'player_movement_score_threshold')")}"
@@ -202,7 +171,6 @@ export PLAYER_MOVEMENT_DISTANCE_THRESHOLD="${PLAYER_MOVEMENT_DISTANCE_THRESHOLD:
 export PLAYER_MOVEMENT_DURATION_THRESHOLD_IN_MS="${PLAYER_MOVEMENT_DURATION_THRESHOLD_IN_MS:-$(first_nonempty "$(optn '.anti_cheat.player_movement_duration_threshold_in_ms')" "$(optf 'player_movement_duration_threshold_in_ms')")}"
 export CORRECT_PLAYER_MOVEMENT="$(lower_bool "${CORRECT_PLAYER_MOVEMENT:-$(first_nonempty "$(optn '.anti_cheat.correct_player_movement')" "$(optf 'correct_player_movement')")}")"
 
-# ---------- Build permissions.json from UI (role_assignments) + env fallbacks ----------
 ensure_permissions_file() {
   if [[ ! -f "$PERM_FILE" ]] || ! jq -e . "$PERM_FILE" >/dev/null 2>&1; then
     echo "[]" > "$PERM_FILE"
@@ -210,7 +178,6 @@ ensure_permissions_file() {
 }
 
 sync_permissions_and_config() {
-  # Als er nog geen config is, kunnen we niets syncen
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "⚠️ Config file $CONFIG_FILE not found, skipping permissions sync"
     return 0
@@ -218,11 +185,9 @@ sync_permissions_and_config() {
 
   ensure_permissions_file
 
-  # 1) role_assignments uit config lezen (altijd array)
   local cfg_ra_json
   cfg_ra_json="$(jq -c '.players.role_assignments // []' "$CONFIG_FILE" 2>/dev/null || echo '[]')"
 
-  # 2) permissions.json normaliseren naar array van {xuid, permission}
   local perm_json
   perm_json="$(jq -c '
     ( . // [] ) |
@@ -232,7 +197,6 @@ sync_permissions_and_config() {
     })
   ' "$PERM_FILE" 2>/dev/null || echo '[]')"
 
-  # 3) config ➜ permissions (union op xuid)
   local new_perm_json
   new_perm_json="$(jq -c --argjson cfg "$cfg_ra_json" --argjson perms "$perm_json" '
     ($perms // []) as $perms
@@ -247,7 +211,7 @@ sync_permissions_and_config() {
   ' <<< '{}')"
 
   echo "${new_perm_json:-[]}" > "$PERM_FILE"
-  # 4) permissions ➜ config (altijd terugschrijven naar config)
+  
   local final_perm_json
   final_perm_json="$(cat "$PERM_FILE")"
 
@@ -266,12 +230,8 @@ sync_permissions_and_config() {
   echo "✅ Synced permissions.json ↔ config.players.role_assignments"
 }
 
+PERM_FILE="${DATA_DIR}/permissions.json"
 
-# ---------- Bidirectionele sync: config <-> permissions.json ----------
-
-PERM_FILE="${DATA_DIR}/permissions.json"   # Zie ook symlinks
-
-# Safe lees helpers: geef altijd geldige JSON terug
 config_ra_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
 perms_json="$(cat "$PERM_FILE" 2>/dev/null || echo '[]')"
 
@@ -343,19 +303,16 @@ merged_json="$(
   ' <<< "{\"config_ra\":$config_ra_json,\"perms\":$perms_json}"
 )"
 
-# Haal twee arrays uit het merge-resultaat
 cfg_out="$(echo "$merged_json" | jq '.merged_for_config')"
 perms_out="$(echo "$merged_json" | jq '.merged_for_perms')"
 
 echo "🔄 Merged $(echo "$cfg_out" | jq 'length') entries voor config & permissions..."
 
-# 1) Schrijf terug naar config: .players.role_assignments = cfg_out
 tmp_cfg="$(mktemp)"
 jq --argjson ra "$cfg_out" '
   .players.role_assignments = $ra
 ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
 
-# 2) Schrijf terug naar permissions.json
 tmp_perm="$(mktemp)"
 echo "$perms_out" | jq '.' > "$tmp_perm" && mv "$tmp_perm" "$PERM_FILE"
 echo "✅ Bidirectionele sync voltooid."
@@ -384,7 +341,6 @@ tmp="$(mktemp)"
 ensure_permissions_file
 echo "✅ permissions.json generated"
 
-# ---------- Build allowlist.json vanuit config.players.role_assignments ----------
 ALLOWLIST_FILE="${DATA_DIR}/allowlist.json"
 
 if [[ -f "$OPT_FILE" ]]; then
@@ -402,9 +358,6 @@ else
   echo "⚠️ $OPT_FILE not found, skipping allowlist.json generation"
 fi
 
-
-
-# ---------- Apply server.properties from ENV via definitions ----------
 PROP_FILE="${DATA_DIR}/server.properties"
 touch "$PROP_FILE"
 
@@ -414,13 +367,10 @@ else
   echo "WARN: /etc/bds-property-definitions.json missing; skipping bulk apply"
 fi
 
-# ---------- Log world configuration ----------
 echo "🌍 World Configuration:"
 echo "   - Name: ${LEVEL_NAME:-<not set>}"
 echo "   - Seed: ${LEVEL_SEED:-<not set>}"
 echo "-------------------------------------------"
-
-# ---------- Pre-start info ----------
 echo "📜 server.properties (excerpt):"
 echo "-------------------------------------------"
 if [ -f "$PROP_FILE" ]; then
@@ -430,7 +380,6 @@ else
 fi
 echo "-------------------------------------------"
 
-# ---------- EULA gate: skip Bedrock if not accepted ----------
 if [[ ${EULA^^} != TRUE ]]; then
   echo
   echo "⚠️ EULA is not accepted (EULA=${EULA:-unset})."
@@ -438,22 +387,15 @@ if [[ ${EULA^^} != TRUE ]]; then
   echo "   Accept the Minecraft EULA in the add-on UI and restart."
   echo "   See https://minecraft.net/terms"
   echo
-  # Container blijft draaien zodat de Flask UI via Ingress bereikbaar blijft.
   tail -f /dev/null
 fi
 
-
-# ---------- Start ----------
-# BDS resolves server.properties, allowlist.json, permissions.json and worlds/
-# relative to its working directory — must cd into BIN_DIR before exec.
 cd "${BIN_DIR}"
 export LD_LIBRARY_PATH="${BIN_DIR}"
 echo Library path: ${LD_LIBRARY_PATH:-"(not set)"}
 
 echo "🚀 Starting Bedrock ${VERSION}"
 
-# Filter extremely noisy Bedrock AI warnings (attack_interval disabled -> scan_interval)
-# so Home Assistant logs stay readable. Set SUPPRESS_NOISY_BEDROCK_LOGS=false to allow all logs.
 : "${SUPPRESS_NOISY_BEDROCK_LOGS:=true}"
 LOG_NOISE_PATTERN="${BEDROCK_LOG_NOISE_PATTERN:-attack_interval.*scan_interval}"
 
