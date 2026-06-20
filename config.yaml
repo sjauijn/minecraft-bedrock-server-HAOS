@@ -20,7 +20,9 @@ map:
 options:
   general:
     mc_version: "latest"
+    mc_download_url: ""
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
   general:
     mc_version: str?
+    mc_download_url: str?
