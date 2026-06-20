@@ -2,26 +2,12 @@ title: Minecraft Server
 config:
   name: Minecraft Server
   description: Minecraft Bedrock Server for Home Assistant
+
 configuration:
   general:
     name: General
     description: Core server configuration.
     fields:
-      mc_version:
-        name: "Minecraft Game Version"
-        description: >-
-          Leave as "latest" to always run the newest official Bedrock release.
-          Enter a specific version (e.g. "1.26.21") to pin the server to that
-          exact version and prevent it from changing on add-on updates/restarts.
-          Use "preview" to run the latest preview/beta build.
-      mc_download_url:
-        name: "Custom Download URL"
-        description: >-
-          Optional. Paste a direct bedrock-server-VERSION.zip link (copy it from
-          the Download button on minecraft.net/en-us/download/server/bedrock) to
-          bypass automatic version lookup entirely. When set, this always takes
-          priority over "Minecraft Game Version". Leave empty to use automatic
-          resolution instead.
       server_name:
         name: Display name
         description: Name shown to players in their server list.
@@ -40,6 +26,7 @@ configuration:
       enable_lan_visibility:
         name: LAN visibility
         description: Advertise the server on the local network (broadcast). Disable when using custom ports or if discovery causes confusion.
+
   world:
     name: World
     description: World identity, generation and rules.
@@ -75,6 +62,7 @@ configuration:
       allow_cheats:
         name: Allow cheats
         description: Permit commands like /tp and /gamemode without operator rights.
+
   players:
     name: Players
     description: Access control and default permissions.
@@ -112,6 +100,7 @@ configuration:
       texturepack_required:
         name: Require texture pack
         description: Force clients to download and use the server’s resource pack.
+
   performance:
     name: Performance
     description: View distance, ticking and threading.
@@ -131,6 +120,7 @@ configuration:
       compression_threshold:
         name: Compression threshold
         description: Minimum packet size (bytes) before compression is applied.
+
   anti_cheat:
     name: Anti-cheat & movement
     description: Server-authoritative movement and thresholds.

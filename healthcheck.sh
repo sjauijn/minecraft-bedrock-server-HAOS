@@ -3,31 +3,48 @@ set -e
 
 DATA_DIR="${DATA_DIR:-/data}"
 CONFIG_FILE="${DATA_DIR}/config/bedrock_for_ha_config.json"
+OPTIONS_FILE="${DATA_DIR}/options.json"
 STOP_MARKER="${DATA_DIR}/run/bedrock_server.stopped"
+VERSION_FILE="/opt/bds/.installed-version"
 
-# EULA Standaard niet geaccepteerd (vereiste)
-eula="false"
-if [ -f "$CONFIG_FILE" ]; then
-  eula="$(jq -r '.general.eula // false' "$CONFIG_FILE" 2>/dev/null || echo "false")"
-fi
-
-# Zolang de EULA NIET geaccepteerd is, beschouwen we de add-on als "gezond":
-# UI werkt, gebruiker kan de EULA alsnog aanvinken.
-case "${eula,,}" in
-  true|1|yes|on)
-    if [ -f "${STOP_MARKER}" ]; then
-      exit 0
+# ─── Install/Upgrade mode: always healthy (only logs are shown) ────────────────
+get_option() {
+    local key="$1"
+    if [ -f "${OPTIONS_FILE}" ]; then
+        jq -r ".${key} // empty" "${OPTIONS_FILE}" 2>/dev/null || true
     fi
-    # EULA geaccepteerd -> Bedrock hoort te draaien; healthcheck moet dat afdwingen
-    echo ${eula}
-    ;;
-  *)
-    # EULA niet geaccepteerd -> UI-only modus is OK voor Supervisor
-    exit 0
-    ;;
+}
+
+INSTALL_UPGRADE_MODE="$(get_option 'install_upgrade_server')"
+case "${INSTALL_UPGRADE_MODE,,}" in
+    true|1|yes|on)
+        exit 0
+        ;;
 esac
 
-# Als Eula geaccepteerd is, controleren of de server draait
+# ─── No software installed: report healthy so HA doesn't kill the add-on ─────
+if [ ! -f "${VERSION_FILE}" ]; then
+    exit 0
+fi
+
+# ─── EULA not accepted: UI-only mode is acceptable ────────────────────────────
+eula="false"
+if [ -f "$CONFIG_FILE" ]; then
+    eula="$(jq -r '.general.eula // false' "$CONFIG_FILE" 2>/dev/null || echo "false")"
+fi
+
+case "${eula,,}" in
+    true|1|yes|on)
+        if [ -f "${STOP_MARKER}" ]; then
+            exit 0
+        fi
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+
+# ─── EULA accepted: Bedrock must be running ───────────────────────────────────
 timeout 3s /usr/local/bin/mc-monitor status-bedrock \
-  --host 127.0.0.1 \
-  --port "${SERVER_PORT:-19132}" >/dev/null 2>&1 || exit 1
+    --host 127.0.0.1 \
+    --port "${SERVER_PORT:-19132}" >/dev/null 2>&1 || exit 1

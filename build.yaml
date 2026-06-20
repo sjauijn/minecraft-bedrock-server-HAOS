@@ -8,5 +8,5 @@ args:
   RESTIFY_VERSION: "1.7.16"
   MC_MONITOR_VERSION: "0.16.7"
 labels:
-  org.opencontainers.image.title: "Minecraft Bedrock (HA Add-on)"
-  org.opencontainers.image.description: "Bedrock server, version selectable at runtime"
+  org.opencontainers.image.title: "Minecraft Bedrock Server (HA Add-on)"
+  org.opencontainers.image.description: "Bedrock server with manual software installation"

@@ -13,16 +13,9 @@ panel_title: "Minecraft Server"
 host_network: true
 arch:
   - amd64
-  - aarch64
 map:
   - share:rw
   - addon_config:rw
-options:
-  general:
-    mc_version: "latest"
-    mc_download_url: ""
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
-  general:
-    mc_version: str?
-    mc_download_url: str?
+  install_upgrade_server: bool?

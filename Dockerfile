@@ -15,7 +15,7 @@ ARG MC_MONITOR_VERSION
 
 # Tools installeren en up to date maken
 RUN apt-get update
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip jq ca-certificates
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip jq
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-flask python3-waitress
 RUN apt-get clean
 RUN rm -rf /var/lib/apt/lists/*
@@ -34,12 +34,6 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 
 RUN echo "🏗️ Building for platform: ${TARGETPLATFORM} (OS=${TARGETOS}, ARCH=${TARGETARCH})"
 
-# NOTE: The Bedrock server binary is no longer baked into the image at build
-# time. It is downloaded at container startup by bedrock-entry.sh based on
-# the "Minecraft Game Version" add-on option (latest/preview/pinned version),
-# exactly like itzg/docker-minecraft-bedrock-server does. This means rebuilding
-# or updating this add-on no longer forces a Minecraft version change.
-
 # Default bedrock poort openen, en poort 8789 openen voor Ingress (Flask Webservice).
 EXPOSE 19132/udp 8789/tcp
 
@@ -49,7 +43,7 @@ WORKDIR /data
 
 ENTRYPOINT ["/usr/local/bin/entrypoint-demoter", "--match", "/data", "--debug", "--stdin-on-term", "stop", "/opt/start.sh"]
 
-#Easy-add tool installeren
+# Easy-add tool installeren
 ADD https://github.com/itzg/easy-add/releases/download/${EASY_ADD_VERSION}/easy-add_linux_${TARGETARCH} /usr/local/bin/easy-add
 RUN chmod +x /usr/local/bin/easy-add
 
@@ -62,24 +56,27 @@ RUN easy-add --var version=${MC_MONITOR_VERSION} --var app=mc-monitor --file {{.
 # Bestanden naar container kopiëren
 COPY bedrock-entry.sh /opt/bedrock-entry.sh
 COPY start.sh /opt/start.sh
+COPY install-server.sh /opt/install-server.sh
 COPY healthcheck.sh /opt/healthcheck.sh
 COPY property-definitions.json /etc/bds-property-definitions.json
 COPY web/app.py /opt/flask/app.py
 COPY web/static /opt/flask/static
 COPY bin/* /usr/local/bin/
 
+# Bedrock binary directory voorbereiden (leeg; wordt gevuld at runtime)
+RUN mkdir -p /opt/bds
+
+# Symlinks voor data directory (runtime-schrijfrechten)
+RUN ln -sfn /data/worlds            /opt/bds/worlds && \
+    ln -sfn /data/server.properties /opt/bds/server.properties && \
+    ln -sfn /data/allowlist.json    /opt/bds/allowlist.json && \
+    ln -sfn /data/permissions.json  /opt/bds/permissions.json
+
 # Maak scripts uitvoerbaar
 RUN chmod +x /opt/bedrock-entry.sh
 RUN chmod +x /opt/start.sh
+RUN chmod +x /opt/install-server.sh
 RUN chmod +x /opt/healthcheck.sh
 RUN chmod +x /usr/local/bin/send-command
-
-# /opt/bds wordt nu pas tijdens runtime gevuld door bedrock-entry.sh,
-# maar we maken de map en de symlinks alvast aan zodat permissies kloppen.
-RUN mkdir -p /opt/bds
-RUN ln -sfn /data/worlds /opt/bds/worlds && \
-    ln -sfn /data/server.properties /opt/bds/server.properties && \
-    ln -sfn /data/allowlist.json /opt/bds/allowlist.json && \
-    ln -sfn /data/permissions.json /opt/bds/permissions.json
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=2 --start-period=15s CMD /opt/healthcheck.sh

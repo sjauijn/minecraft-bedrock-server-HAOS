@@ -1,6 +1,3 @@
-## 1.0.29 - 2026-06-20
-- Added version selector of MC Bedrock Game
-- 
 ## 1.0.28 - 2026-06-19
 - Updated Bedrock Server from '1.26.30.5' to '1.26.31.1
 
