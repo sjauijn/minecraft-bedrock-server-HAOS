@@ -444,6 +444,9 @@ fi
 
 
 # ---------- Start ----------
+# BDS resolves server.properties, allowlist.json, permissions.json and worlds/
+# relative to its working directory — must cd into BIN_DIR before exec.
+cd "${BIN_DIR}"
 export LD_LIBRARY_PATH="${BIN_DIR}"
 echo Library path: ${LD_LIBRARY_PATH:-"(not set)"}
 
