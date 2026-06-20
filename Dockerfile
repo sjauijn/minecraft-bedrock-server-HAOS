@@ -6,11 +6,6 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG TARGETPLATFORM
 
-# ===== build args voor Bedrock versie/bron =====
-ARG BDS_VERSION
-ARG BDS_URL
-ARG BDS_SHA256
-
 # ===== build args voor extra tools =====
 ARG EASY_ADD_VERSION
 ARG ENTRYPOINT_DEMOTER_VERSION
@@ -18,10 +13,9 @@ ARG SET_PROPERTY_VERSION
 ARG RESTIFY_VERSION
 ARG MC_MONITOR_VERSION
 
-
 # Tools installeren en up to date maken
 RUN apt-get update
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip jq
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip jq ca-certificates
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-flask python3-waitress
 RUN apt-get clean
 RUN rm -rf /var/lib/apt/lists/*
@@ -39,8 +33,12 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     fi
 
 RUN echo "🏗️ Building for platform: ${TARGETPLATFORM} (OS=${TARGETOS}, ARCH=${TARGETARCH})"
-RUN echo "🧱 Bedrock Server version: ${BDS_VERSION}"
-RUN echo "🌐 Bedrock Server URL: ${BDS_URL}"
+
+# NOTE: The Bedrock server binary is no longer baked into the image at build
+# time. It is downloaded at container startup by bedrock-entry.sh based on
+# the "Minecraft Game Version" add-on option (latest/preview/pinned version),
+# exactly like itzg/docker-minecraft-bedrock-server does. This means rebuilding
+# or updating this add-on no longer forces a Minecraft version change.
 
 # Default bedrock poort openen, en poort 8789 openen voor Ingress (Flask Webservice).
 EXPOSE 19132/udp 8789/tcp
@@ -50,8 +48,6 @@ VOLUME ["/data"]
 WORKDIR /data
 
 ENTRYPOINT ["/usr/local/bin/entrypoint-demoter", "--match", "/data", "--debug", "--stdin-on-term", "stop", "/opt/start.sh"]
-
-#ARG EASY_ADD_VERSION <-- Dubbel. Even uitgecomment, kijken of het zonder kan.
 
 #Easy-add tool installeren
 ADD https://github.com/itzg/easy-add/releases/download/${EASY_ADD_VERSION}/easy-add_linux_${TARGETARCH} /usr/local/bin/easy-add
@@ -67,7 +63,6 @@ RUN easy-add --var version=${MC_MONITOR_VERSION} --var app=mc-monitor --file {{.
 COPY bedrock-entry.sh /opt/bedrock-entry.sh
 COPY start.sh /opt/start.sh
 COPY healthcheck.sh /opt/healthcheck.sh
-#COPY *.mcpack /opt/addons/ <-- MCPack support verwijderd.
 COPY property-definitions.json /etc/bds-property-definitions.json
 COPY web/app.py /opt/flask/app.py
 COPY web/static /opt/flask/static
@@ -79,34 +74,12 @@ RUN chmod +x /opt/start.sh
 RUN chmod +x /opt/healthcheck.sh
 RUN chmod +x /usr/local/bin/send-command
 
-
-# (1) Downloaden Bedrock Server
-RUN set -eux;
-RUN test -n "${BDS_VERSION}" && test -n "${BDS_URL}"
-RUN echo "📦 Downloading Bedrock Server version ${BDS_VERSION}..."
-RUN curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors --http1.1 -A "itzg/minecraft-bedrock-server" -o /tmp/bedrock.zip "${BDS_URL}"
-
-
-# (2) Uitpakken Bedrock Server naar /opt/bds
+# /opt/bds wordt nu pas tijdens runtime gevuld door bedrock-entry.sh,
+# maar we maken de map en de symlinks alvast aan zodat permissies kloppen.
 RUN mkdir -p /opt/bds
-WORKDIR /opt/bds
-RUN unzip -q /tmp/bedrock.zip && rm -f /tmp/bedrock.zip
-
-
-# (3) Hernoem binary naar vaste naam met versie-suffix
-RUN chmod +x bedrock_server && mv bedrock_server "bedrock_server-${BDS_VERSION}"
-
-
-# (4) Bewaar versie-info voor runtime
-RUN echo "${BDS_VERSION}" > /etc/bds-version
-
-# (5) Symlinks maken voor data directory (i.v.m. schrijfrechten)
-# /data/worlds symlink wordt at runtime gezet via bedrock-entry.sh -> /config/worlds
-RUN ln -sfn /data/worlds            /opt/bds/worlds && \
+RUN ln -sfn /data/worlds /opt/bds/worlds && \
     ln -sfn /data/server.properties /opt/bds/server.properties && \
-    ln -sfn /data/allowlist.json    /opt/bds/allowlist.json && \
-    ln -sfn /data/permissions.json  /opt/bds/permissions.json
-    
-ENV VERSION=${BDS_VERSION}
+    ln -sfn /data/allowlist.json /opt/bds/allowlist.json && \
+    ln -sfn /data/permissions.json /opt/bds/permissions.json
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=2 --start-period=15s CMD /opt/healthcheck.sh
