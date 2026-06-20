@@ -1,3 +1,6 @@
+## 1.0.28 - 2026-06-19
+- Updated Bedrock Server from '1.26.30.5' to '1.26.31.1
+
 ## 1.0.27 - 2026-06-11
 - Fix: create /config/worlds in start.sh before privilege demotion to avoid "Permission denied"
 - Fix: bedrock-entry.sh now falls back to /data/worlds if /config/worlds is unavailable
