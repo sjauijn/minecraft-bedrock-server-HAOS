@@ -1,6 +1,6 @@
 name: "Minecraft Bedrock Server"
 description: "Minecraft Bedrock Server tailored for Home Assistant with worlds accessible via SFTP"
-version: "1.0.28"
+version: "1.0.29"
 slug: "minecraft_bedrock_server"
 url: https://github.com/sjauijn/minecraft-bedrock-server-HAOS/
 apparmor: true
@@ -13,8 +13,14 @@ panel_title: "Minecraft Server"
 host_network: true
 arch:
   - amd64
+  - aarch64
 map:
   - share:rw
   - addon_config:rw
+options:
+  general:
+    mc_version: "latest"
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
+  general:
+    mc_version: str?
