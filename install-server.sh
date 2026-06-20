@@ -1,26 +1,19 @@
 #!/bin/bash
-# =============================================================================
-#  Minecraft Bedrock Dedicated Server — Manual Install / Upgrade Script
-#  Called from start.sh when "Installing/Upgrading Server" = true
-# =============================================================================
+
 set -eo pipefail
 
 readonly DATA_DIR="${DATA_DIR:-/data}"
 readonly CONFIG_DIR="/config"
 readonly SOFTWARE_DIR="${CONFIG_DIR}/bedrock-server-software"
-# BIN_DIR and VERSION_FILE are both inside /data (persistent volume) so they
-# survive container restarts and image rebuilds.
 readonly BIN_DIR="${DATA_DIR}/bds"
 readonly VERSION_FILE="${DATA_DIR}/.installed-bds-version"
 
-# ─── helpers ──────────────────────────────────────────────────────────────────
 log()      { echo "$*"; }
 log_info() { echo "  ℹ️  $*"; }
 log_ok()   { echo "  ✅ $*"; }
 log_warn() { echo "  ⚠️  $*"; }
 log_err()  { echo "  ❌ $*"; }
 
-# Returns 0 if $1 > $2 , 1 if equal, 2 if $1 < $2
 version_gt() {
     [[ "$1" == "$2" ]] && return 1
     local IFS=.
@@ -33,14 +26,12 @@ version_gt() {
     return 1
 }
 
-# ─── Banner ───────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════════╗"
 echo "║   🧱  Minecraft Bedrock Server — Software Install / Upgrade Mode     ║"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# ─── Step 1: ensure required directories exist ────────────────────────────────
 if [ ! -d "${SOFTWARE_DIR}" ]; then
     log "📁 Creating software directory: ${SOFTWARE_DIR}"
     mkdir -p "${SOFTWARE_DIR}"
@@ -55,7 +46,6 @@ if [ ! -d "${BIN_DIR}" ]; then
     log_ok "Directory created: ${BIN_DIR}"
 fi
 
-# ─── Step 2: read currently installed version ─────────────────────────────────
 if [ -f "${VERSION_FILE}" ]; then
     INSTALLED_VERSION="$(cat "${VERSION_FILE}" | tr -d '[:space:]')"
 else
@@ -68,7 +58,6 @@ else
     log_info "Installed Minecraft Bedrock Version: ${INSTALLED_VERSION}"
 fi
 
-# ─── Step 3: scan for ZIP file ────────────────────────────────────────────────
 ZIP_FILE=""
 ZIP_VERSION=""
 
@@ -84,7 +73,6 @@ for f in "${SOFTWARE_DIR}"/bedrock-server-*.zip; do
     fi
 done
 
-# ─── Step 4: no ZIP found ─────────────────────────────────────────────────────
 if [ -z "${ZIP_FILE}" ]; then
     echo ""
     echo "┌──────────────────────────────────────────────────────────────────────┐"
@@ -102,14 +90,12 @@ if [ -z "${ZIP_FILE}" ]; then
     echo "│  Then restart the add-on to perform the installation.                 │"
     echo "└──────────────────────────────────────────────────────────────────────┘"
     echo ""
-    # Exit non-zero so HA logs show a clear failure, not "complete"
     exit 1
 fi
 
 log ""
 log "🔍 Found package: bedrock-server-${ZIP_VERSION}.zip"
 
-# ─── Step 5: decide install / upgrade / skip ──────────────────────────────────
 INSTALL_ACTION="none"
 
 if [ -z "${INSTALLED_VERSION}" ]; then
@@ -119,7 +105,6 @@ elif version_gt "${ZIP_VERSION}" "${INSTALLED_VERSION}"; then
     log "🔼 Upgrade available: ${INSTALLED_VERSION} → ${ZIP_VERSION}"
     INSTALL_ACTION="upgrade"
 elif version_gt "${INSTALLED_VERSION}" "${ZIP_VERSION}"; then
-    # ── Downgrade path ──────────────────────────────────────────────────────
     case "${ALLOW_DOWNGRADE,,}" in
         true|1|yes|on)
             echo ""
@@ -149,15 +134,12 @@ elif version_gt "${INSTALLED_VERSION}" "${ZIP_VERSION}"; then
             echo "  🗑️  Countdown complete. Beginning downgrade procedure..."
             echo ""
 
-            # ── Wipe /data/bds (installed binary + libs only) ───────────────
-            # Worlds and bedrock-server-software are preserved.
             log "🗑️  Removing installed server binary directory: ${BIN_DIR}"
             rm -rf "${BIN_DIR}"
             mkdir -p "${BIN_DIR}"
             chmod 0755 "${BIN_DIR}"
             log_ok "Binary directory wiped and recreated."
 
-            # ── Clear version file ──────────────────────────────────────────
             rm -f "${VERSION_FILE}"
             INSTALLED_VERSION=""
 
@@ -193,7 +175,6 @@ else
     INSTALL_ACTION="skip"
 fi
 
-# ─── Step 6: perform install / upgrade ───────────────────────────────────────
 if [ "${INSTALL_ACTION}" = "install" ] || [ "${INSTALL_ACTION}" = "upgrade" ]; then
     echo ""
     if [ "${INSTALL_ACTION}" = "install" ]; then
@@ -207,7 +188,6 @@ if [ "${INSTALL_ACTION}" = "install" ] || [ "${INSTALL_ACTION}" = "upgrade" ]; t
     fi
     echo ""
 
-    # Remove old binary when upgrading
     if [ "${INSTALL_ACTION}" = "upgrade" ]; then
         OLD_BIN="${BIN_DIR}/bedrock_server-${INSTALLED_VERSION}"
         if [ -f "${OLD_BIN}" ]; then
@@ -244,7 +224,6 @@ if [ "${INSTALL_ACTION}" = "install" ] || [ "${INSTALL_ACTION}" = "upgrade" ]; t
     mv "${BIN_DIR}/bedrock_server" "${BIN_DIR}/bedrock_server-${ZIP_VERSION}"
     log_ok "Binary installed as: bedrock_server-${ZIP_VERSION}"
 
-    # Persist version to /data (survives container restarts)
     echo "${ZIP_VERSION}" > "${VERSION_FILE}"
 
     rm -rf "${EXTRACT_TMP}"
@@ -252,18 +231,17 @@ if [ "${INSTALL_ACTION}" = "install" ] || [ "${INSTALL_ACTION}" = "upgrade" ]; t
     log_ok "Minecraft Bedrock Server ${ZIP_VERSION} installed successfully."
 fi
 
-# ─── Step 7: final instructions ───────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════════╗"
 echo "║                                                                      ║"
 echo "║   🏁  Software Installation / Upgrade process complete.              ║"
 echo "║                                                                      ║"
-echo "║   To start the Minecraft Bedrock Server:                            ║"
+echo "║   To start the Minecraft Bedrock Server:                             ║"
 echo "║                                                                      ║"
 echo "║     1️⃣   In the add-on Configuration, set                            ║"
-echo "║          ┌──────────────────────────────────────┐                   ║"
-echo "║          │  Installing/Upgrading Server: false  │                   ║"
-echo "║          └──────────────────────────────────────┘                   ║"
+echo "║          ┌──────────────────────────────────────┐                    ║"
+echo "║          │  Installing/Upgrading Server: false  │                    ║"
+echo "║          └──────────────────────────────────────┘                    ║"
 echo "║     2️⃣   Restart the add-on.                                         ║"
 echo "║                                                                      ║"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
