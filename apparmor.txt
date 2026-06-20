@@ -1,9 +1,9 @@
 #include <tunables/global>
 
 profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate_deleted) {
-  # ====== Basis abstractions ======
-  # Basisrechten voor standaard syscalls, env, DNS, etc.
-  # Deze zijn “aanbevolen” in de HA-docs.
+
+  # ====== Base abstractions ======
+  # Standard syscalls, environment variables, DNS resolution, temp files
   #include <abstractions/base>
   #include <abstractions/nameservice>
   #include <abstractions/user-tmp>
@@ -14,110 +14,160 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   capability fowner,
   capability setgid,
   capability setuid,
-  capability net_bind_service,    # luisteren op 19132/19133/8789
+  capability net_bind_service,    # listen on 19132/19133/8789
   capability sys_chroot,
 
-  # ====== Netwerk ======
+  # ====== Network ======
   network inet stream,
   network inet6 stream,
   network inet dgram,
   network inet6 dgram,
 
-  # ====== Binaries die je gebruikt ======
-  /bin/bash                    ixr,
-  /bin/sh                      ixr,
-  /usr/bin/env                 ixr,
-  /usr/bin/waitress-serve      ixr,
-  /usr/bin/ln                  ixr,
-  /usr/bin/python3             ixr,
-  /usr/bin/rm                  ixr,
-  /usr/bin/mkdir               ixr,
-  /usr/bin/chmod               ixr,
-  /usr/local/bin/python3       ixr,
-  /usr/local/bin/waitress-serve ixr,
-  /usr/bin/mktemp               ixr,
-  /usr/bin/jq                  ixr,
-  /usr/bin/grep                ixr,
-  /usr/bin/sed                 ixr,
-  /usr/bin/awk                 ixr,
-  /usr/bin/mv                  ixr,
-  /usr/local/bin/send-command  ixr,
-  /usr/local/bin/box64         ixr,
-  /usr/local/bin/mc-monitor    ixr,
-  /usr/local/bin/set-property  ixr,
-  /usr/bin/touch               ixr,
-  /usr/bin/curl                ixr,
-  /usr/bin/unzip               ixr,
-  /usr/bin/tail                ixr,
-  /usr/bin/sleep               ixr,
-  /usr/bin/stdbuf              ixr,
-  /usr/bin/timeout             ixr,
-  /usr/bin/find                ixr,
-  /usr/bin/ls                  ixr,
-  /usr/bin/id                  ixr,
-  /usr/bin/cat                 ixr,
-  /usr/bin/pwd                 ixr,
+  # ====== Shell interpreters ======
+  /bin/bash                        ixr,
+  /bin/sh                          ixr,
+  /usr/bin/env                     ixr,
 
-  # ====== Add-on root & scripts ======
-  # Alles onder /opt mag gelezen/geschreven/uitgevoerd worden
-  /opt/                        rix,
-  /opt/**                      rixwlk,
+  # ====== Core GNU coreutils ======
+  /usr/bin/awk                     ixr,
+  /usr/bin/basename                ixr,
+  /usr/bin/cat                     ixr,
+  /usr/bin/chmod                   ixr,
+  /usr/bin/cp                      ixr,
+  /usr/bin/cut                     ixr,
+  /usr/bin/dirname                 ixr,
+  /usr/bin/find                    ixr,
+  /usr/bin/grep                    ixr,
+  /usr/bin/head                    ixr,
+  /usr/bin/id                      ixr,
+  /usr/bin/ln                      ixr,
+  /usr/bin/ls                      ixr,
+  /usr/bin/mkdir                   ixr,
+  /usr/bin/mktemp                  ixr,
+  /usr/bin/mv                      ixr,
+  /usr/bin/printf                  ixr,
+  /usr/bin/pwd                     ixr,
+  /usr/bin/rm                      ixr,
+  /usr/bin/sed                     ixr,
+  /usr/bin/sleep                   ixr,
+  /usr/bin/sort                    ixr,
+  /usr/bin/stdbuf                  ixr,
+  /usr/bin/tail                    ixr,
+  /usr/bin/timeout                 ixr,
+  /usr/bin/touch                   ixr,
+  /usr/bin/tr                      ixr,
+  /usr/bin/unzip                   ixr,
+  /usr/bin/wc                      ixr,
+  /usr/bin/xargs                   ixr,
 
-  # Startscript
-  /start.sh                    rix,
+  # ====== Network tools ======
+  /usr/bin/curl                    ixr,
 
-  # Bedrock server & entry
-  /opt/bds/                    rix,
-  /opt/bds/**                  rixwlk,
-  /opt/bedrock-entry.sh        rix,
+  # ====== JSON processing ======
+  /usr/bin/jq                      ixr,
 
-  # Flask web UI
-  /opt/flask/                  rix,
-  /opt/flask/**                rixwlk,
+  # ====== Python / Flask (web UI) ======
+  /usr/bin/python3                 ixr,
+  /usr/bin/python3.*               ixr,
+  /usr/local/bin/python3           ixr,
+  /usr/local/bin/python3.*         ixr,
+  /usr/bin/waitress-serve          ixr,
+  /usr/local/bin/waitress-serve    ixr,
 
-  # ====== Data & config ======
-  /data/                       rix,
-  /data/**                     rixwlk,
-  /share/                      rix,
-  /share/**                    rixwlk,
+  # ====== Add-on custom tools ======
+  /usr/local/bin/send-command      ixr,
+  /usr/local/bin/mc-monitor        ixr,
+  /usr/local/bin/set-property      ixr,
+  /usr/local/bin/restify           ixr,
+  /usr/local/bin/entrypoint-demoter ixr,
 
-  # addon_config mount (mapped as addon_config:rw in config.yaml)
-  /config/                     rixwlk,
-  /config/**                   rixwlk,
+  # ====== Box64 (ARM64 x86 emulation) ======
+  /usr/local/bin/box64             ixr,
 
-  # BDS metadata / definities
-  /etc/bds-version             r,
+  # ====== Add-on scripts ======
+  /opt/start.sh                    ixr,
+  /opt/bedrock-entry.sh            ixr,
+  /opt/install-server.sh           ixr,
+  /opt/healthcheck.sh              ixr,
+
+  # ====== Add-on directory (BDS binary, libs, resources) ======
+  /opt/                            r,
+  /opt/**                          rixwlk,
+
+  # ====== Bedrock server directory ======
+  /opt/bds/                        r,
+  /opt/bds/**                      rixwlk,
+
+  # ====== Flask web UI files ======
+  /opt/flask/                      r,
+  /opt/flask/**                    rixwlk,
+
+  # ====== Persistent data volume ======
+  /data/                           r,
+  /data/**                         rixwlk,
+
+  # ====== Shared HA storage ======
+  /share/                          r,
+  /share/**                        rixwlk,
+
+  # ====== Add-on config (addon_config:rw) ======
+  /config/                         rw,
+  /config/**                       rixwlk,
+
+  # ====== BDS static config files ======
   /etc/bds-property-definitions.json r,
 
-  # MIME types lezen
-  /etc/mime.types              r,
+  # ====== System config (read-only) ======
+  /etc/passwd                      r,
+  /etc/group                       r,
+  /etc/hosts                       r,
+  /etc/resolv.conf                 r,
+  /etc/nsswitch.conf               r,
+  /etc/mime.types                  r,
+  /etc/ssl/certs/**                r,
+  /etc/ca-certificates/**          r,
 
-  # ====== Libraries & systeem ======
-  /lib/**                      mr,
-  /lib64/**                    mr,
-  /usr/lib/**                  mr,
-  /usr/lib64/**                mr,
-  /usr/local/lib/**            mr,
-  /usr/libexec/**              mr,
-  /usr/share/**                r,
+  # ====== System libraries ======
+  /lib/**                          mr,
+  /lib64/**                        mr,
+  /usr/lib/**                      mr,
+  /usr/lib64/**                    mr,
+  /usr/local/lib/**                mr,
+  /usr/libexec/**                  mr,
+  /usr/share/**                    r,
 
-  # ====== Temp & logs ======
-  /tmp/                        rix,
-  /tmp/**                      rixwlk,
-  /var/tmp/                    rix,
-  /var/tmp/**                  rixwlk,
+  # ====== Temp directories ======
+  /tmp/                            rw,
+  /tmp/**                          rixwlk,
+  /var/tmp/                        rw,
+  /var/tmp/**                      rixwlk,
 
-  /var/log/                    rix,
-  /var/log/**                  rixwlk,
+  # ====== Logs ======
+  /var/log/                        r,
+  /var/log/**                      rw,
 
-  # ====== Devices (veilige subset) ======
-  /dev/null                    rw,
-  /dev/urandom                 r,
-  /dev/random                  r,
+  # ====== /proc (needed by bash pid checks and entrypoint-demoter) ======
+  /proc/                           r,
+  /proc/*/                         r,
+  /proc/*/status                   r,
+  /proc/*/fd/                      r,
+  /proc/self/                      r,
+  /proc/self/**                    r,
+  /proc/sys/kernel/ngroups_max     r,
 
-  # ====== Expliciet verboden dingen ======
-  deny /dev/mem                rwx,
-  deny /dev/kmem               rwx,
-  deny /dev/sd*                rwx,
-  deny /dev/loop*              rwx,
+  # ====== /dev (safe subset) ======
+  /dev/null                        rw,
+  /dev/zero                        r,
+  /dev/urandom                     r,
+  /dev/random                      r,
+  /dev/fd                          r,
+  /dev/fd/**                       rw,
+  /dev/pts/**                      rw,
+  /dev/tty                         rw,
+
+  # ====== Explicitly denied dangerous devices ======
+  deny /dev/mem                    rwx,
+  deny /dev/kmem                   rwx,
+  deny /dev/sd*                    rwx,
+  deny /dev/loop*                  rwx,
 }
