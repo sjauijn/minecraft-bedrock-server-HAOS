@@ -102,26 +102,45 @@ case "${RAW_MC_VERSION,,}" in
     PREVIEW="true"
     ;;
   *)
-    # Specific pinned version, e.g. "1.26.21" or "1.26.21.1"
-    VERSION="${RAW_MC_VERSION}"
+    # Specific pinned version, e.g. "1.26.21" or "1.26.21.1".
+    # Bedrock releases are always published as "1.X.Y[.Z]", so if the user
+    # typed just "26.21" (omitting the leading "1."), add it back.
+    if [[ "$RAW_MC_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] && [[ "$RAW_MC_VERSION" != 1.* ]]; then
+      VERSION="1.${RAW_MC_VERSION}"
+      echo "ℹ️ Interpreting '${RAW_MC_VERSION}' as Bedrock version ${VERSION}"
+    else
+      VERSION="${RAW_MC_VERSION}"
+    fi
     ;;
 esac
 
 export VERSION
 export PREVIEW="${PREVIEW:-false}"
 
+# Custom direct download URL takes absolute priority over everything else.
+# Lets the user paste the exact bedrock-server-VERSION.zip link they copied
+# from https://www.minecraft.net/en-us/download/server/bedrock, which is the
+# only fully reliable source when automatic resolution fails.
+RAW_MC_DOWNLOAD_URL="$(first_nonempty \
+  "${MC_DOWNLOAD_URL:-}" \
+  "${DIRECT_DOWNLOAD_URL:-}" \
+  "$(optn '.general.mc_download_url')" \
+  "$(optf 'mc_download_url')")"
+RAW_MC_DOWNLOAD_URL="$(echo "$RAW_MC_DOWNLOAD_URL" | xargs 2>/dev/null || echo "$RAW_MC_DOWNLOAD_URL")"
+[[ -n "$RAW_MC_DOWNLOAD_URL" ]] && export DIRECT_DOWNLOAD_URL="$RAW_MC_DOWNLOAD_URL"
+
 BIN_DIR="/opt/bds"
 mkdir -p "${BIN_DIR}"
 
 # ---------- Resolve "LATEST"/"PREVIEW" to a concrete version + download URL ----------
-# Mirrors itzg/docker-minecraft-bedrock-server's resolution logic:
-#  1) primary: scrape the official download page with `restify` (already bundled
-#     in this image), looking for the <a data-platform="serverBedrock...Linux">
-#     element, which is far more robust than regexing raw HTML.
-#  2) fallback: query the community JSON helper used by itzg as a backup when
-#     minecraft.net's markup changes and breaks the scrape.
+# Primary: scrape the official download page with `restify` (already bundled in
+# this image), looking for the <a data-platform="serverBedrock...Linux"> element.
+# minecraft.net's download page can render its download links via client-side
+# JS, in which case scraping the raw HTML/DOM will not find a match. When that
+# happens we fail fast with instructions to use the "Custom Download URL"
+# option, where the user pastes the exact link copied from their browser
+# (Download button → copy link), which is the one fully reliable method.
 BDS_DOWNLOAD_PAGE="https://www.minecraft.net/en-us/download/server/bedrock"
-MC_BDS_HELPER_URL="https://mc-bds-helper.vercel.app/api/latest"
 
 resolve_via_restify() {
   local want_preview="$1"
@@ -146,41 +165,9 @@ resolve_via_restify() {
   return 0
 }
 
-resolve_via_helper_api() {
-  local want_preview="$1"
-  local json url
-  json="$(curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors "${MC_BDS_HELPER_URL}" 2>/dev/null || true)"
-  [[ -z "$json" ]] && return 1
-
-  if [[ "$want_preview" == "true" ]]; then
-    url="$(echo "$json" | jq -r '.preview.linux // .serverBedrockPreviewLinux // empty' 2>/dev/null || true)"
-  else
-    url="$(echo "$json" | jq -r '.stable.linux // .serverBedrockLinux // empty' 2>/dev/null || true)"
-  fi
-  [[ -z "$url" ]] && return 1
-
-  echo "$url"
-  return 0
-}
-
 resolve_latest_url() {
   local want_preview="$1"
-  local url=""
-
-  url="$(resolve_via_restify "$want_preview" || true)"
-  if [[ -n "$url" ]]; then
-    echo "$url"
-    return 0
-  fi
-
-  echo "⚠️ Could not scrape ${BDS_DOWNLOAD_PAGE}, trying fallback helper API..." >&2
-  url="$(resolve_via_helper_api "$want_preview" || true)"
-  if [[ -n "$url" ]]; then
-    echo "$url"
-    return 0
-  fi
-
-  return 1
+  resolve_via_restify "$want_preview"
 }
 
 extract_version_from_url() {
@@ -194,20 +181,26 @@ DOWNLOAD_URL=""
 RESOLVED_VERSION=""
 
 if [[ -n "${DIRECT_DOWNLOAD_URL:-}" ]]; then
+  echo "🌐 Using custom download URL from configuration."
   DOWNLOAD_URL="${DIRECT_DOWNLOAD_URL}"
   RESOLVED_VERSION="$(extract_version_from_url "$DOWNLOAD_URL")"
 elif [[ "$VERSION" == "LATEST" || "$VERSION" == "PREVIEW" ]]; then
   echo "🔎 Resolving ${VERSION} Bedrock server version from minecraft.net..."
   DOWNLOAD_URL="$(resolve_latest_url "$( [[ "$VERSION" == "PREVIEW" ]] && echo true || echo false )" || true)"
   if [[ -z "$DOWNLOAD_URL" ]]; then
-    echo "ERROR: Could not resolve ${VERSION} download URL from ${BDS_DOWNLOAD_PAGE} or fallback API."
-    echo "       You can pin DIRECT_DOWNLOAD_URL to a bedrock-server-VERSION.zip as a workaround,"
-    echo "       or set 'Minecraft Game Version' to a specific known version (e.g. 1.21.50.10)."
+    echo "ERROR: Could not automatically resolve the ${VERSION} download URL from ${BDS_DOWNLOAD_PAGE}."
+    echo "       minecraft.net sometimes renders the download link via client-side JS,"
+    echo "       which automatic scraping cannot see."
+    echo "       Workaround (confirmed working): open ${BDS_DOWNLOAD_PAGE} in a browser,"
+    echo "       right-click the Linux 'Download' button, copy the link address, and paste"
+    echo "       it into the add-on's 'Minecraft Download URL' (Custom Download URL) field."
+    echo "       Example: https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.31.1.zip"
+    echo "       Alternatively, set 'Minecraft Game Version' to a specific known version (e.g. 1.26.21)."
     exit 2
   fi
   RESOLVED_VERSION="$(extract_version_from_url "$DOWNLOAD_URL")"
 else
-  # Specific pinned version requested, e.g. "1.21.50.10"
+  # Specific pinned version requested, e.g. "1.26.21" or "1.26.21.1"
   RESOLVED_VERSION="$VERSION"
   ARCH_SUFFIX="bin-linux"
   if [[ "${PREVIEW,,}" == "true" ]]; then
