@@ -19,12 +19,10 @@ get_option() {
 INSTALL_UPGRADE_MODE="$(get_option 'install_upgrade_server')"
 ALLOW_DOWNGRADE="$(get_option 'allow_downgrade')"
 
-# ─── Guard: allow_downgrade=true requires install_upgrade_server=true ─────────
 case "${ALLOW_DOWNGRADE,,}" in
     true|1|yes|on)
         case "${INSTALL_UPGRADE_MODE,,}" in
             true|1|yes|on)
-                # OK — downgrade mode handled inside install-server.sh
                 ;;
             *)
                 echo ""
@@ -52,7 +50,6 @@ case "${ALLOW_DOWNGRADE,,}" in
         ;;
 esac
 
-# ─── Install / Upgrade mode ───────────────────────────────────────────────────
 case "${INSTALL_UPGRADE_MODE,,}" in
     true|1|yes|on)
         echo ""
@@ -67,7 +64,6 @@ case "${INSTALL_UPGRADE_MODE,,}" in
         ;;
 esac
 
-# ─── Normal server mode: guard against missing software ──────────────────────
 if [ ! -f "${VERSION_FILE}" ]; then
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════════╗"
@@ -81,11 +77,9 @@ if [ ! -f "${VERSION_FILE}" ]; then
     echo "║     📂  addon_configs/<this-addon>/bedrock-server-software/         ║"
     echo "╚══════════════════════════════════════════════════════════════════════╝"
     echo ""
-    # Keep container alive so HA doesn't restart-loop; user needs to change config
     tail -f /dev/null
 fi
 
-# ─── Normal server start ──────────────────────────────────────────────────────
 start_bedrock_server() {
     echo "🎮 Starting Bedrock server..."
     mkdir -p "${RUNTIME_DIR}"
